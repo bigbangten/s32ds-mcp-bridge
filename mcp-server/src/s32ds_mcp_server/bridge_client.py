@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import json as _json
 import os
 import subprocess
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 
 import httpx
+
+
+_DISCOVERY_FILE = Path.home() / ".s32ds-mcp" / "bridge.json"
 
 
 class BridgeHttpError(RuntimeError):
@@ -31,15 +35,34 @@ class BridgeSettings:
         )
 
 
+def _read_discovery_file() -> Optional[Tuple[str, str]]:
+    """Read the user-profile discovery file written by the bridge plug-in.
+
+    Returns (bridge_url, token) or None. This is the preferred discovery path
+    because it works regardless of where the user's S32DS workspace is.
+    """
+    if not _DISCOVERY_FILE.exists():
+        return None
+    try:
+        raw = _DISCOVERY_FILE.read_text(encoding="utf-8")
+        doc = _json.loads(raw)
+        token = str(doc.get("token") or "").strip()
+        url = str(doc.get("url") or "").strip()
+        if token and url:
+            return url, token
+    except Exception as e:  # noqa: BLE001
+        print(f"[s32ds-mcp] discovery file read failed: {e}", file=sys.stderr)
+    return None
+
+
 def _candidate_token_paths() -> list[Path]:
-    """Where the bridge plug-in might store its token. First match wins."""
+    """Fallback: workspace-local token files. Used only if discovery file is missing."""
     out: list[Path] = []
     ws = os.environ.get("S32DS_WORKSPACE")
     if ws:
         out.append(Path(ws) / ".metadata" / ".plugins" / "com.example.s32ds.agent.bridge" / "token")
     out.append(Path.home() / "workspaceS32DS.3.5" / ".metadata" / ".plugins"
                / "com.example.s32ds.agent.bridge" / "token")
-    # Windows user-profile fallback when $HOME differs from %USERPROFILE%
     up = os.environ.get("USERPROFILE")
     if up:
         out.append(Path(up) / "workspaceS32DS.3.5" / ".metadata" / ".plugins"
@@ -64,7 +87,12 @@ def _try_grant_read_acl(path: Path) -> None:
 
 
 def _read_token_from_disk() -> Optional[str]:
-    """Try to read the token from the workspace metadata file. Re-ACL on permission error."""
+    """Resolve token. Discovery file (user-profile) preferred; workspace-local fallback."""
+    # Preferred: discovery file written by the bridge plug-in at a fixed path
+    disc = _read_discovery_file()
+    if disc is not None:
+        return disc[1]
+    # Fallback: direct workspace-local token files
     for path in _candidate_token_paths():
         if not path.exists():
             continue
@@ -101,11 +129,18 @@ class BridgeClient:
     ) -> None:
         self.settings = settings or BridgeSettings.from_env()
         self.transport = transport
-        # If no token was injected via env, try disk once at startup
+        # If no token was injected via env, resolve from discovery file / disk.
+        # Also prefer the URL declared in the discovery file if present — lets
+        # the bridge pick a different port and clients still find it.
         if not self.settings.token:
-            disk = _read_token_from_disk()
-            if disk:
-                self.settings = BridgeSettings(base_url=self.settings.base_url, token=disk)
+            disc = _read_discovery_file()
+            if disc is not None:
+                url, tok = disc
+                self.settings = BridgeSettings(base_url=url.rstrip("/"), token=tok)
+            else:
+                disk = _read_token_from_disk()
+                if disk:
+                    self.settings = BridgeSettings(base_url=self.settings.base_url, token=disk)
         self._last_refresh: float = 0.0
 
     def headers(self) -> dict[str, str]:

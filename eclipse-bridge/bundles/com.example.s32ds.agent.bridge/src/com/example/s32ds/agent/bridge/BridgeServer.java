@@ -15,6 +15,7 @@ import org.eclipse.core.runtime.Platform;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.ui.PlatformUI;
 
+import com.example.s32ds.agent.bridge.auth.DiscoveryFile;
 import com.example.s32ds.agent.bridge.auth.TokenStore;
 import com.example.s32ds.agent.bridge.http.Router;
 import com.example.s32ds.agent.bridge.util.UiThread;
@@ -124,6 +125,20 @@ public final class BridgeServer {
         server.start();
         this.httpServer = server;
         log("Bridge started on " + DEFAULT_HOST + ":" + port, null);
+
+        // Publish a user-profile discovery file so MCP clients can find the bridge
+        // regardless of where the user's S32DS workspace is located. Best-effort —
+        // a failure here shouldn't kill the bridge.
+        try {
+            DiscoveryFile.write("http://" + DEFAULT_HOST + ":" + port, token, port);
+            log("Discovery file written at " + DiscoveryFile.path(), null);
+        } catch (Throwable t) {
+            log("Failed to write discovery file (non-fatal)", t);
+        }
+
+        // Clean up discovery file on JVM shutdown
+        Runtime.getRuntime().addShutdownHook(new Thread(DiscoveryFile::deleteQuietly,
+                "s32ds-agent-bridge-discovery-cleanup"));
     }
 
     private int resolvePort() {
