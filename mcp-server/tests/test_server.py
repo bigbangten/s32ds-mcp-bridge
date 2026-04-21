@@ -89,23 +89,46 @@ class ServerFetchTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ServerRegistrationTests(unittest.TestCase):
-    def test_create_server_registers_phase1_tools(self) -> None:
+    def test_create_server_registers_all_phase_tools(self) -> None:
+        """Sanity: registered tools must include the core set from every phase."""
         mcp_server = server.create_server()
-        tool_names = sorted(tool.name for tool in asyncio.run(mcp_server.list_tools()))
-        self.assertEqual(
-            tool_names,
-            sorted(
-                [
-                    "find_command",
-                    "get_state",
-                    "health",
-                    "list_commands",
-                    "list_legacy_actions",
-                    "list_perspectives",
-                    "list_registry_menus",
-                    "list_views",
-                    "list_visible_menu",
-                    "list_wizards",
-                ]
-            ),
-        )
+        tool_names = set(tool.name for tool in asyncio.run(mcp_server.list_tools()))
+        required = {
+            # Phase 1 — read-only
+            "health",
+            "get_state",
+            "list_commands",
+            "find_command",
+            "list_registry_menus",
+            "list_legacy_actions",
+            "list_views",
+            "list_perspectives",
+            "list_wizards",
+            "list_visible_menu",
+            "list_problems",
+            # Phase 2 — safe writes
+            "show_view",
+            "switch_perspective",
+            "open_file",
+            "save_all",
+            "build_project",
+            "list_editors",
+            # Phase 3 — S32DS discovery
+            "s32ds_inventory",
+            "s32ds_config_tools",
+            "s32ds_debuggers",
+            "s32ds_toolchains",
+            # Phase 3.5 — guardrails
+            "list_launch_configs",
+            "analyze_launch_config",
+            "debug_sessions",
+            "debug_stackframes",
+            "debug_variables",
+            "debug_breakpoints",
+            "dialogs_open",
+            "dialog_widgets",
+            "console_list",
+            "console_tail",
+        }
+        missing = required - tool_names
+        self.assertEqual(missing, set(), f"missing tools: {missing}")
