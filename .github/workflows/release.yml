@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.1.0)'
+        required: true
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Build Eclipse bundle
+        env:
+          MAVEN_OPTS: >-
+            -Djdk.xml.maxGeneralEntitySizeLimit=0
+            -Djdk.xml.totalEntitySizeLimit=0
+            -Djdk.xml.entityExpansionLimit=0
+            -Djdk.xml.elementAttributeLimit=0
+            -Djdk.xml.maxOccurLimit=0
+            -Djdk.xml.maxXMLNameLimit=0
+        run: mvn -f eclipse-bridge/releng/pom.xml -B -ntp clean verify
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p dist
+          cp eclipse-bridge/releng/com.example.s32ds.agent.repository/target/repository/plugins/com.example.s32ds.agent.bridge_*.jar dist/
+          cp eclipse-bridge/releng/com.example.s32ds.agent.repository/target/com.example.s32ds.agent.repository-*.zip dist/s32ds-mcp-update-site.zip
+          ls -la dist/
+
+      - name: Determine tag
+        id: tag
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF##*/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            dist/com.example.s32ds.agent.bridge_*.jar
+            dist/s32ds-mcp-update-site.zip
+          body: |
+            ## Installation
+
+            ### Quick (Claude Code)
+            ```
+            /plugin marketplace add bigbangten/s32ds-mcp-bridge
+            /plugin install s32ds-mcp
+            /s32:setup
+            ```
+
+            ### Manual
+            1. Download `com.example.s32ds.agent.bridge_*.jar` below.
+            2. Drop it into `<S32DS install>\eclipse\dropins\` and start S32DS once with `-clean`.
+            3. See [INSTALL.md](../main/INSTALL.md) for details.

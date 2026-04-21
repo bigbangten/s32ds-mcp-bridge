@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "policy": {
+    "read_only": "allow",
+    "ui_navigation": "allow",
+    "workspace_write": "prompt",
+    "build": "prompt",
+    "debug_target": "prompt_strong",
+    "hardware_mutation": "deny_by_default",
+    "installation_mutation": "deny_by_default",
+    "destructive": "deny_by_default"
+  },
+  "commands": []
+}

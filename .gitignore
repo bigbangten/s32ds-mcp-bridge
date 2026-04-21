@@ -1,0 +1,36 @@
+# Maven / Tycho
+target/
+.m2-s32ds/
+.polyglot.build.tycho.order
+*.class
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+*.egg
+.venv/
+.pytest_cache/
+
+# Editor
+.idea/
+.vscode/
+.project
+.classpath
+.settings/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated
+*.log
+.metadata/
+
+# Internal dev notes
+docs/dev/

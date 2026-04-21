@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<site>
+  <feature url="features/com.example.s32ds.agent.feature_0.1.0.qualifier.jar"
+           id="com.example.s32ds.agent.feature"
+           version="0.1.0.qualifier">
+    <category name="com.example.s32ds.agent.category"/>
+  </feature>
+
+  <category-def
+      name="com.example.s32ds.agent.category"
+      label="S32DS Agent Bridge"/>
+</site>

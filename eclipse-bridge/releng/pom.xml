@@ -1,0 +1,68 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.example.s32ds</groupId>
+  <artifactId>com.example.s32ds.agent.parent</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+
+  <modules>
+    <module>com.example.s32ds.agent.target</module>
+    <module>../bundles/com.example.s32ds.agent.bridge</module>
+    <module>../features/com.example.s32ds.agent.feature</module>
+    <module>com.example.s32ds.agent.repository</module>
+  </modules>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <tycho.version>4.0.8</tycho.version>
+  </properties>
+
+  <repositories>
+    <repository>
+      <id>eclipse-2021-06</id>
+      <layout>p2</layout>
+      <url>https://download.eclipse.org/releases/2021-06/</url>
+    </repository>
+  </repositories>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.eclipse.tycho</groupId>
+        <artifactId>tycho-maven-plugin</artifactId>
+        <version>${tycho.version}</version>
+        <extensions>true</extensions>
+      </plugin>
+      <plugin>
+        <groupId>org.eclipse.tycho</groupId>
+        <artifactId>target-platform-configuration</artifactId>
+        <version>${tycho.version}</version>
+        <configuration>
+          <resolver>p2</resolver>
+          <target>
+            <artifact>
+              <groupId>com.example.s32ds</groupId>
+              <artifactId>com.example.s32ds.agent.target</artifactId>
+              <version>${project.version}</version>
+            </artifact>
+          </target>
+          <environments>
+            <environment>
+              <os>win32</os>
+              <ws>win32</ws>
+              <arch>x86_64</arch>
+            </environment>
+            <environment>
+              <os>linux</os>
+              <ws>gtk</ws>
+              <arch>x86_64</arch>
+            </environment>
+          </environments>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

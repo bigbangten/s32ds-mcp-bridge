@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feature
+      id="com.example.s32ds.agent.feature"
+      label="S32DS Agent Bridge"
+      version="0.1.0.qualifier"
+      provider-name="Example">
+
+   <description url="https://example.invalid/s32ds-agent-bridge">
+      Phase 1 read-only bridge for S32 Design Studio 3.5.x.
+   </description>
+
+   <plugin
+         id="com.example.s32ds.agent.bridge"
+         download-size="0"
+         install-size="0"
+         version="0.0.0"
+         unpack="false"/>
+
+</feature>

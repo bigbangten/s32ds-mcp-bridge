@@ -1,0 +1,10 @@
+[mcp_servers.s32ds]
+command = "python"
+args = ["D:\\workspace_ai\\s32ds-mcp-agent\\mcp-server\\src\\s32ds_mcp_server\\server.py"]
+startup_timeout_sec = 20
+tool_timeout_sec = 120
+enabled = true
+
+[mcp_servers.s32ds.env]
+S32DS_BRIDGE_URL = "http://127.0.0.1:39231"
+S32DS_BRIDGE_TOKEN = "replace-with-token-from-workspace-metadata"

@@ -1,0 +1,29 @@
+[project]
+name = "s32ds-mcp-server"
+version = "0.1.0"
+description = "FastMCP wrapper for the S32DS Eclipse bridge"
+requires-python = ">=3.9"
+dependencies = [
+    "httpx>=0.27,<1",
+    "mcp>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[project.scripts]
+s32ds-mcp-server = "s32ds_mcp_server.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/s32ds_mcp_server"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
