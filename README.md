@@ -45,11 +45,15 @@ The AI is guessing from generic Eclipse documentation. Your S32DS install has a 
 
 Choose based on your AI client:
 
-### Path A — Claude Code users (easiest)
+### Path A₀ — Zero-config (recommended for newcomers)
+
+Don't have Python / haven't installed anything yet? Paste the [**QUICKSTART prompt**](./QUICKSTART.md) into Claude Code as your first message. Claude will detect missing prereqs, install them via `winget`, and guide you through the final 3 slash commands. Works from a fresh Windows install.
+
+### Path A — Claude Code users (already have Python 3.10+)
 
 ```
 /plugin marketplace add bigbangten/s32ds-mcp-bridge
-/plugin install s32ds-mcp
+/plugin install s32
 /s32:setup
 ```
 
