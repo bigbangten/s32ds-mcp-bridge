@@ -112,22 +112,34 @@ powershell -NoProfile -Command \
 
 Poll up to 120 seconds for:
 ```bash
-TOKEN_PATH="$HOME/workspaceS32DS.3.5/.metadata/.plugins/com.example.s32ds.agent.bridge/token"
-while [ ! -f "$TOKEN_PATH" ] && [ "$((SECONDS))" -lt 120 ]; do sleep 2; done
+HOME_DIR="${USERPROFILE:-$HOME}"
+# Prefer the discovery file the bridge plug-in publishes (v0.1.4+)
+DISCOVERY="$HOME_DIR/.s32ds-mcp/bridge.json"
+TOKEN_PATH="$HOME_DIR/workspaceS32DS.3.5/.metadata/.plugins/com.example.s32ds.agent.bridge/token"
+while [ ! -f "$DISCOVERY" ] && [ ! -f "$TOKEN_PATH" ] && [ "$((SECONDS))" -lt 120 ]; do sleep 2; done
 ```
 
 ### Step 7 — Fix token ACL
 
-The plugin's TokenStore tightens ACL to owner-only but the resulting ACL blocks even the owner's bash from reading. One-time grant:
+The plugin's TokenStore tightens ACL to owner-only but the resulting ACL blocks even the owner's bash from reading. Only needed if you fell back to the workspace-local path (the discovery file has normal ACL):
 ```bash
-icacls "$(cygpath -w "$TOKEN_PATH")" //grant "$USER:R"
+# USERPROFILE/USERNAME are Windows-native; $USER can be empty in MinGW bash.
+USR="${USERNAME:-${USER:-$(whoami)}}"
+icacls "$(cygpath -w "$TOKEN_PATH")" //grant "$USR:R"
 ```
 
 ### Step 8 — Verify
 
 ```bash
-TOKEN=$(cat "$TOKEN_PATH" | tr -d '\r\n')
-curl -fs -H "Authorization: Bearer $TOKEN" http://127.0.0.1:39231/health | jq .
+# Prefer discovery file (no ACL hassle); fall back to workspace token
+if [ -f "$DISCOVERY" ]; then
+  TOKEN=$(python -c "import json; print(json.load(open(r'$DISCOVERY'))['token'])")
+  BASE=$(python -c "import json; print(json.load(open(r'$DISCOVERY'))['url'])")
+else
+  TOKEN=$(cat "$TOKEN_PATH" | tr -d '\r\n')
+  BASE="http://127.0.0.1:39231"
+fi
+curl -fs -H "Authorization: Bearer $TOKEN" "$BASE/health" | jq .
 ```
 Expect `ok: true` and `data.workbenchRunning: true`.
 
