@@ -44,6 +44,76 @@ public final class LaunchConfigAnalyzer {
         return out;
     }
 
+    /**
+     * Full dump of a single launch configuration — every attribute, not just the
+     * curated list. Use when the user asks "what's inside the Debug Configurations
+     * entry for X?" — equivalent to opening the dialog and reading every field.
+     */
+    public Map<String, Object> fullDetails(String name) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("name", name);
+        ILaunchManager mgr = DebugPlugin.getDefault().getLaunchManager();
+        ILaunchConfiguration cfg;
+        try {
+            cfg = findByName(mgr, name);
+        } catch (CoreException e) {
+            result.put("error", "lookup failed: " + e.getMessage());
+            return result;
+        }
+        if (cfg == null) {
+            result.put("error", "launch configuration not found");
+            return result;
+        }
+        try {
+            ILaunchConfigurationType type = cfg.getType();
+            result.put("typeId", type.getIdentifier());
+            result.put("typeName", type.getName());
+            result.put("modes", new ArrayList<>(type.getSupportedModes()));
+            result.put("category", type.getCategory());
+            result.put("pluginIdentifier", type.getPluginIdentifier());
+        } catch (CoreException ignored) {}
+
+        // EVERY attribute — raw keys + values, sorted for readability
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> attrs = (Map<String, Object>) cfg.getAttributes();
+            Map<String, Object> sorted = new TreeMap<>();
+            if (attrs != null) {
+                for (Map.Entry<String, Object> e : attrs.entrySet()) {
+                    sorted.put(e.getKey(), stringifyValue(e.getValue()));
+                }
+            }
+            result.put("attributes", sorted);
+            result.put("attributeCount", sorted.size());
+        } catch (CoreException e) {
+            result.put("attributesError", e.getMessage());
+        }
+
+        result.put("risk", classifyRisk(cfg));
+        result.put("isReadOnly", cfg.isReadOnly());
+        try { result.put("isLocal", cfg.isLocal()); } catch (Throwable ignored) {}
+        return result;
+    }
+
+    /** Convert attribute value (could be List, Map, String, Integer, Boolean) to JSON-friendly form. */
+    private Object stringifyValue(Object v) {
+        if (v == null) return null;
+        if (v instanceof String || v instanceof Number || v instanceof Boolean) return v;
+        if (v instanceof List<?>) {
+            List<Object> out = new ArrayList<>();
+            for (Object o : (List<?>) v) out.add(stringifyValue(o));
+            return out;
+        }
+        if (v instanceof Map<?, ?>) {
+            Map<String, Object> out = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> e : ((Map<?, ?>) v).entrySet()) {
+                out.put(String.valueOf(e.getKey()), stringifyValue(e.getValue()));
+            }
+            return out;
+        }
+        return String.valueOf(v);
+    }
+
     public Map<String, Object> analyze(String name) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("name", name);

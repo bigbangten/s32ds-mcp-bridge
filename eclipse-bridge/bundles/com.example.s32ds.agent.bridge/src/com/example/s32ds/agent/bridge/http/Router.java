@@ -152,6 +152,13 @@ public final class Router {
                 send(exchange, 200, ok(launchAnalyzer.analyze(name)));
                 return;
             }
+            if ("GET".equals(method) && path.startsWith("/launch-configs/")
+                    && !path.endsWith("/analyze")) {
+                String inner = path.substring("/launch-configs/".length());
+                String name = URLDecoder.decode(inner, StandardCharsets.UTF_8);
+                send(exchange, 200, ok(launchAnalyzer.fullDetails(name)));
+                return;
+            }
             if ("GET".equals(method) && "/debug/sessions".equals(path)) {
                 send(exchange, 200, ok(debugInspector.listSessions()));
                 return;

@@ -168,6 +168,10 @@ async def fetch_launch_analyze(name: str) -> dict[str, Any]:
     return await bridge_client.get_json(f"/launch-configs/{quote(name, safe='')}/analyze")
 
 
+async def fetch_launch_details(name: str) -> dict[str, Any]:
+    return await bridge_client.get_json(f"/launch-configs/{quote(name, safe='')}")
+
+
 async def fetch_debug_sessions() -> dict[str, Any]:
     return await bridge_client.get_json("/debug/sessions")
 
@@ -368,6 +372,16 @@ def create_server() -> FastMCP:
     async def list_launch_configs() -> dict[str, Any]:
         """List all launch/debug/flash configurations with risk classification."""
         return await fetch_launch_configs()
+
+    @mcp.tool()
+    async def launch_config_details(name: str) -> dict[str, Any]:
+        """Full dump of a launch config — every attribute, equivalent to opening
+        the Debug Configurations dialog and reading every field.
+
+        Use when the user asks what's inside a specific Debug/Run/Flash config
+        without wanting them to open the Debug Configurations dialog.
+        """
+        return await fetch_launch_details(name)
 
     @mcp.tool()
     async def analyze_launch_config(name: str) -> dict[str, Any]:
