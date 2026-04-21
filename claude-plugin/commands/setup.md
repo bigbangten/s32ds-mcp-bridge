@@ -33,9 +33,36 @@ If none found: ask the user for the path. Do not proceed without a valid one.
 ### Step 2 — Locate or obtain the plug-in JAR
 
 Priority order:
-1. **Prebuilt JAR in repo** — `${CLAUDE_PLUGIN_ROOT}/../eclipse-bridge/releng/com.example.s32ds.agent.repository/target/repository/plugins/com.example.s32ds.agent.bridge_*.jar`.
-2. **GitHub Release asset** — latest release of the upstream repo. Download via `gh release download --repo bigbangten/s32ds-mcp-bridge --pattern 'com.example.s32ds.agent.bridge_*.jar' --dir /tmp/`.
-3. **Build from source** — only if `--rebuild` passed or nothing above succeeded. Requires JDK ≥ 17 and Maven; invoke `scripts/build_bridge.sh` and pass `-Djdk.xml.maxGeneralEntitySizeLimit=0` etc. (see that script).
+
+**1. Prebuilt JAR in repo** — `${CLAUDE_PLUGIN_ROOT}/../eclipse-bridge/releng/com.example.s32ds.agent.repository/target/repository/plugins/com.example.s32ds.agent.bridge_*.jar`.
+
+**2. GitHub Release asset** — the preferred path for end users who didn't clone the repo:
+
+```bash
+DEST=$HOME/.cache/s32ds-mcp-bridge
+mkdir -p "$DEST"
+
+# Prefer gh CLI (no auth needed for public repos when using --repo flag)
+if command -v gh >/dev/null 2>&1; then
+  gh release download --repo bigbangten/s32ds-mcp-bridge \
+    --pattern 'com.example.s32ds.agent.bridge_*.jar' \
+    --dir "$DEST" --clobber
+fi
+
+# Curl fallback when gh CLI is not available
+if [ -z "$(ls "$DEST"/com.example.s32ds.agent.bridge_*.jar 2>/dev/null)" ]; then
+  LATEST_URL=$(curl -s https://api.github.com/repos/bigbangten/s32ds-mcp-bridge/releases/latest \
+    | grep '"browser_download_url"' \
+    | grep 'com.example.s32ds.agent.bridge_' \
+    | head -1 | sed 's/.*"\(https[^"]*\)".*/\1/')
+  [ -n "$LATEST_URL" ] && curl -sL -o "$DEST/$(basename "$LATEST_URL")" "$LATEST_URL"
+fi
+
+JAR=$(ls "$DEST"/com.example.s32ds.agent.bridge_*.jar 2>/dev/null | sort -V | tail -1)
+[ -z "$JAR" ] && echo "ERROR: failed to download JAR from GitHub Release" && exit 1
+```
+
+**3. Build from source** — only if `--rebuild` passed or nothing above succeeded. Requires JDK ≥ 17 and Maven; invoke `scripts/build_bridge.sh` and pass `-Djdk.xml.maxGeneralEntitySizeLimit=0` etc. (see that script).
 
 Record resolved JAR path as `$JAR` and its version qualifier (from filename `com.example.s32ds.agent.bridge_<VERSION>.jar`) as `$VER`.
 

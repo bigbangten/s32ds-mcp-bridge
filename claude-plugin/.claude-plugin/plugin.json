@@ -1,6 +1,6 @@
 {
   "name": "s32",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "S32 Design Studio 3.5.x live introspection bridge. Gives Claude/Codex accurate menu paths, command IDs, workbench state, build/problem info, launch config analysis, and dialog inspection — so the AI stops directing users to non-existent menus or unsafe flash/debug actions.",
   "author": {
     "name": "Open-source contributors"
@@ -11,10 +11,9 @@
   "mcpServers": {
     "s32ds": {
       "command": "python",
-      "args": ["-m", "s32ds_mcp_server.server"],
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/bootstrap_and_run.py"],
       "env": {
-        "S32DS_BRIDGE_URL": "http://127.0.0.1:39231",
-        "PYTHONPATH": "${CLAUDE_PLUGIN_ROOT}/../mcp-server/src"
+        "S32DS_BRIDGE_URL": "http://127.0.0.1:39231"
       }
     }
   }
