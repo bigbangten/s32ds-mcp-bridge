@@ -188,6 +188,22 @@ async def fetch_debug_breakpoints() -> dict[str, Any]:
     return await bridge_client.get_json("/debug/breakpoints")
 
 
+async def fetch_debug_status() -> dict[str, Any]:
+    return await bridge_client.get_json("/debug/status")
+
+
+async def fetch_debug_location() -> dict[str, Any]:
+    return await bridge_client.get_json("/debug/location")
+
+
+async def fetch_debug_registers() -> dict[str, Any]:
+    return await bridge_client.get_json("/debug/registers")
+
+
+async def fetch_debug_memory(addr: str, length: int = 64) -> dict[str, Any]:
+    return await bridge_client.get_json(f"/debug/memory?addr={quote_plus(addr)}&length={length}")
+
+
 async def fetch_dialogs_open() -> dict[str, Any]:
     return await bridge_client.get_json("/dialogs/open")
 
@@ -411,6 +427,45 @@ def create_server() -> FastMCP:
     async def debug_breakpoints() -> dict[str, Any]:
         """All registered breakpoints with enabled/resolved/line info."""
         return await fetch_debug_breakpoints()
+
+    @mcp.tool()
+    async def debug_status() -> dict[str, Any]:
+        """Lightweight debug status: anyLive/anyHalted + per-launch halted flags.
+
+        Fast one-shot answer to "is something being debugged?" / "is it halted?" without
+        pulling full stack/variable state. Use before debug_location / debug_registers.
+        """
+        return await fetch_debug_status()
+
+    @mcp.tool()
+    async def debug_location() -> dict[str, Any]:
+        """Current halt location: {halted, configName, threadName, function, lineNumber, sourceElement}.
+
+        Answers "where is it stopped?" — returns the top stack frame's function name,
+        source line, and (best-effort) file path for the first suspended thread. Returns
+        {halted:false} when no target is suspended.
+        """
+        return await fetch_debug_location()
+
+    @mcp.tool()
+    async def debug_registers() -> dict[str, Any]:
+        """Register groups and values for the first suspended thread's top frame.
+
+        Returns {halted, hasRegisterGroups, groups:[{name, registers:[{name, value, size, type}]}]}.
+        Read-only — never writes registers. Works when the CDT debugger exposes
+        standard IRegisterGroup (PEmicro, S32 Debugger, J-Link, GDB Hardware all do).
+        """
+        return await fetch_debug_registers()
+
+    @mcp.tool()
+    async def debug_memory(addr: str, length: int = 64) -> dict[str, Any]:
+        """Read target memory as hex. addr accepts '0x...', pure hex, or decimal.
+
+        length capped server-side to 4096 bytes to avoid stalling the target MCU.
+        Requires a suspended debug target that adapts to IMemoryBlockRetrieval
+        (standard for CDT + PEmicro/GDB). Never writes memory.
+        """
+        return await fetch_debug_memory(addr, length)
 
     @mcp.tool()
     async def dialogs_open() -> dict[str, Any]:

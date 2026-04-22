@@ -180,6 +180,30 @@ public final class Router {
                 send(exchange, 200, ok(debugInspector.breakpoints()));
                 return;
             }
+            if ("GET".equals(method) && "/debug/status".equals(path)) {
+                send(exchange, 200, ok(debugInspector.status()));
+                return;
+            }
+            if ("GET".equals(method) && "/debug/location".equals(path)) {
+                send(exchange, 200, ok(debugInspector.location()));
+                return;
+            }
+            if ("GET".equals(method) && "/debug/registers".equals(path)) {
+                send(exchange, 200, ok(debugInspector.registers()));
+                return;
+            }
+            if ("GET".equals(method) && "/debug/memory".equals(path)) {
+                String addr = query.get("addr");
+                if (addr == null || addr.isEmpty()) {
+                    send(exchange, 400, error("BAD_REQUEST", "Query parameter 'addr' is required (hex 0x... or decimal)", null));
+                    return;
+                }
+                int len = 64;
+                String ls = query.get("length");
+                if (ls != null) { try { len = Integer.parseInt(ls); } catch (NumberFormatException ignored) {} }
+                send(exchange, 200, ok(debugInspector.readMemory(addr, len)));
+                return;
+            }
             if ("GET".equals(method) && "/dialogs/open".equals(path)) {
                 send(exchange, 200, ok(dialogInspector.listShells()));
                 return;
