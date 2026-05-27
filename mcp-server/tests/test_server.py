@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import unittest
 
 import httpx
@@ -40,6 +41,20 @@ class BridgeClientTests(unittest.IsolatedAsyncioTestCase):
             await client.get_json("/health")
 
         self.assertEqual(exc_info.exception.status_code, 401)
+
+    async def test_bridge_client_delete_json(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(request.method, "DELETE")
+            self.assertEqual(request.url.path, "/debug/watch")
+            return httpx.Response(200, json={"ok": True, "data": {"removed": 1}})
+
+        client = BridgeClient(
+            BridgeSettings(base_url="http://127.0.0.1:39231", token="abc"),
+            transport=_mock_transport(handler),
+        )
+
+        payload = await client.delete_json("/debug/watch")
+        self.assertEqual(payload["data"]["removed"], 1)
 
 
 class ServerFetchTests(unittest.IsolatedAsyncioTestCase):
@@ -87,6 +102,48 @@ class ServerFetchTests(unittest.IsolatedAsyncioTestCase):
         payload = await server.fetch_visible_menu("menu:org.eclipse.ui.main.menu")
         self.assertTrue(payload["ok"])
 
+    async def test_danger_off_error_surfaces(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(request.method, "POST")
+            self.assertEqual(request.url.path, "/debug/step")
+            return httpx.Response(
+                403,
+                json={"ok": False, "error": {"code": "DANGER_OFF"}},
+            )
+
+        server.bridge_client = BridgeClient(
+            BridgeSettings(base_url="http://127.0.0.1:39231", token="abc"),
+            transport=_mock_transport(handler),
+        )
+
+        with self.assertRaises(BridgeHttpError) as exc_info:
+            await server.call_debug_step("over")
+
+        self.assertEqual(exc_info.exception.status_code, 403)
+        self.assertEqual(exc_info.exception.payload["error"]["code"], "DANGER_OFF")
+
+    async def test_call_launch_run_with_overrides_posts_body(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(request.method, "POST")
+            self.assertEqual(request.url.path, "/launch/run-with-overrides")
+            body = json.loads(request.content)
+            self.assertEqual(body["configName"], "cfg")
+            self.assertEqual(body["mode"], "debug")
+            self.assertEqual(body["copyName"], "cfg_copy")
+            self.assertEqual(body["overrides"], {"a.bool": False, "b.text": "x"})
+            return httpx.Response(200, json={"ok": True, "data": {"configName": "cfg_copy"}})
+
+        server.bridge_client = BridgeClient(
+            BridgeSettings(base_url="http://127.0.0.1:39231", token="abc"),
+            transport=_mock_transport(handler),
+        )
+
+        payload = await server.call_launch_run_with_overrides(
+            "cfg", "debug", "cfg_copy", {"a.bool": False, "b.text": "x"}
+        )
+        self.assertEqual(payload["data"]["configName"], "cfg_copy")
+
+
 
 class ServerRegistrationTests(unittest.TestCase):
     def test_create_server_registers_all_phase_tools(self) -> None:
@@ -94,7 +151,7 @@ class ServerRegistrationTests(unittest.TestCase):
         mcp_server = server.create_server()
         tool_names = set(tool.name for tool in asyncio.run(mcp_server.list_tools()))
         required = {
-            # Phase 1 — read-only
+            # Phase 1 ??read-only
             "health",
             "get_state",
             "list_commands",
@@ -106,19 +163,19 @@ class ServerRegistrationTests(unittest.TestCase):
             "list_wizards",
             "list_visible_menu",
             "list_problems",
-            # Phase 2 — safe writes
+            # Phase 2 ??safe writes
             "show_view",
             "switch_perspective",
             "open_file",
             "save_all",
             "build_project",
             "list_editors",
-            # Phase 3 — S32DS discovery
+            # Phase 3 ??S32DS discovery
             "s32ds_inventory",
             "s32ds_config_tools",
             "s32ds_debuggers",
             "s32ds_toolchains",
-            # Phase 3.5 — guardrails
+            # Phase 3.5 ??guardrails
             "list_launch_configs",
             "analyze_launch_config",
             "debug_sessions",
@@ -129,6 +186,29 @@ class ServerRegistrationTests(unittest.TestCase):
             "dialog_widgets",
             "console_list",
             "console_tail",
+            # Phase 5 ??danger gate + mutating debug/launch operations
+            "danger_state",
+            "danger_enable",
+            "danger_disable",
+            "debug_step",
+            "debug_resume",
+            "debug_suspend",
+            "debug_terminate",
+            "debug_restart",
+            "debug_breakpoint_set",
+            "debug_breakpoint_clear",
+            "debug_memory_write",
+            "debug_register_write",
+            "launch_run",
+            "launch_run_with_overrides",
+            # Phase 6 ??expression/watch/variable/run-to-line
+            "debug_evaluate",
+            "debug_watch_list",
+            "debug_watch_add",
+            "debug_watch_remove",
+            "debug_variable_write",
+            "debug_run_to_line",
+            "debug_jump_to_line",
         }
         missing = required - tool_names
         self.assertEqual(missing, set(), f"missing tools: {missing}")

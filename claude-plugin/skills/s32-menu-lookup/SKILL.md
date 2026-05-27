@@ -11,6 +11,21 @@ S32DS's UI is **dynamic**: visible menus depend on the installed plugin combinat
 
 A local HTTP bridge runs inside the user's S32DS process at `http://127.0.0.1:39231` with bearer-token auth. It's wrapped as MCP tools exposed by the `s32ds` MCP server (see `mcp__s32ds__*` tools when this plugin's MCP server is registered). Always use those tools — do not answer from memory.
 
+## Self-improvement loop
+
+This skill may update its own reusable memory when live S32DS work reveals a verified repeatable procedure.
+
+Before trying an ad-hoc workaround, search `references/lessons.md` for relevant terms such as the dialog title, tool name, error code, endpoint, or Windows/SWT behavior.
+
+After a task involved real trial-and-error, record a lesson only when all are true:
+- the first approach failed for a non-obvious S32DS/Eclipse/SWT/MCP reason;
+- the final approach was verified against the live workbench;
+- the lesson is likely to change how a future agent acts.
+
+Use `scripts/record_learning.py` relative to this skill folder to append the lesson. Include `title`, `tags`, `context`, `failed`, `worked`, `verify`, and `caution`. If the lesson changes a mandatory workflow, update this `SKILL.md` too; otherwise keep the detail in `references/lessons.md`.
+
+Never record bearer tokens, secrets, private user source code, speculative guesses, or one-off environmental noise. If the current runtime cannot write to the skill folder, provide the exact lesson text in the final answer so the canonical skill can be updated later.
+
 ## Decision tree — which tools to call for which question
 
 | User asks | First tool | Follow-ups |
@@ -23,7 +38,8 @@ A local HTTP bridge runs inside the user's S32DS process at `http://127.0.0.1:39
 | "Flash해도 돼?" / "Debug 시작해도 돼?" | `list_launch_configs` | `analyze_launch_config(name)` — 절대 실행하지 말고 결과만 보고 |
 | "뭐 설치돼 있어?" / "어떤 toolchain?" | `s32ds_inventory`, `s32ds_toolchains`, `s32ds_debuggers`, `s32ds_config_tools` | |
 | "디버그 중인데 이상해" | `debug_sessions` → `debug_breakpoints` → `debug_stackframes` → `debug_variables(frame)` | |
-| "지금 열린 대화상자 뭐야?" | `dialogs_open` | `dialog_widgets(index)` — 필드 값만 읽기, 절대 버튼 클릭 가이드만 |
+| "step/resume/terminate/breakpoint/memory/register/launch 실행해" | `danger_state` | explicit user ask 확인 → 필요 시 `/s32:danger on` 안내 → mutating tool 호출 |
+| "What dialog is open?" / "Close the current notification/modal" | `dialogs_open` | `dialog_widgets(index)`; if the user explicitly asks to close a modal, use an exact-title close recipe from `references/lessons.md` and verify with `dialogs_open` |
 | "PEMicro 연결 로그" / "Console 내용" | `console_list` | `console_tail(name="PEMicro")` |
 | "파일 열어줘" | `open_file(path)` | |
 
@@ -53,14 +69,16 @@ Nature determines which CDT menus apply.
 1. `get_state` — confirm project
 2. `analyze_launch_config(name)` if about debug/flash — check `.elf` exists, device matches, risk level
 3. If user wants a BUILD: `save_all` → `build_project(name, kind)` → `list_problems(name)` and report severity counts
-4. Never call `post_*` for destructive actions without the user's explicit ask in THIS turn.
+4. Never call mutating debug/launch tools (`debug_step`, `debug_resume`, `debug_terminate`, `debug_breakpoint_set`, `debug_memory_write`, `debug_register_write`, `launch_run`, `debug_evaluate` with side effects, etc.) unless the user explicitly asked in THIS turn and danger mode is ON.
+5. If a mutating tool returns `DANGER_OFF`, tell the user to run `/s32:danger on [minutes]` or ask whether they want danger mode enabled. Do not silently open the gate.
 
 ### For dialog/wizard guidance:
 
 1. `dialogs_open` — is a dialog visible?
 2. If yes, `dialog_widgets(index)` — read field values, button labels
-3. Tell the user: "In the current dialog, [field X] should be [value Y] because [reasoning]. Press [Button Z]."
-4. Never pretend you clicked anything. Read + advise only.
+3. If the user asks for guidance, tell them: "In the current dialog, [field X] should be [value Y] because [reasoning]. Press [Button Z]."
+4. If the user explicitly asks you to close/dismiss a modal and the bridge has no click endpoint, use a narrow external UI method only against the exact visible dialog title/process, then verify with `dialogs_open`.
+5. Never claim a click/close happened until a follow-up bridge query confirms it.
 
 ## Anti-patterns (real failures that cost trust)
 

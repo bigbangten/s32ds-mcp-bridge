@@ -168,6 +168,9 @@ class BridgeClient:
     async def post_json(self, path: str, payload: dict[str, Any], *, timeout: float = 30.0) -> Any:
         return await self.request_json("POST", path, json=payload, timeout=timeout)
 
+    async def delete_json(self, path: str, *, timeout: float = 30.0) -> Any:
+        return await self.request_json("DELETE", path, timeout=timeout)
+
     async def request_json(
         self,
         method: str,

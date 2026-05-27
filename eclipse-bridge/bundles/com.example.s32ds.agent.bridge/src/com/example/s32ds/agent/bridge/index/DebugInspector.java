@@ -1,6 +1,11 @@
 package com.example.s32ds.agent.bridge.index;
 
 import org.eclipse.core.resources.IMarker;
+import org.eclipse.cdt.dsf.concurrent.DataRequestMonitor;
+import org.eclipse.cdt.dsf.datamodel.DMContexts;
+import org.eclipse.cdt.dsf.debug.service.IStack;
+import org.eclipse.cdt.dsf.service.DsfServicesTracker;
+import org.eclipse.cdt.dsf.service.DsfSession;
 import org.eclipse.debug.core.DebugException;
 import org.eclipse.debug.core.DebugPlugin;
 import org.eclipse.debug.core.ILaunch;
@@ -22,6 +27,11 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+
+import org.osgi.framework.FrameworkUtil;
 
 /**
  * Read-only inspection of active debug sessions, stack, variables, breakpoints.
@@ -72,59 +82,39 @@ public final class DebugInspector {
     public Map<String, Object> stackFrames() {
         Map<String, Object> result = new LinkedHashMap<>();
         List<Map<String, Object>> frames = new ArrayList<>();
-        ILaunchManager mgr = DebugPlugin.getDefault().getLaunchManager();
-        outer:
-        for (ILaunch launch : mgr.getLaunches()) {
-            if (launch.isTerminated()) continue;
-            for (IDebugTarget t : launch.getDebugTargets()) {
-                if (!t.isSuspended()) continue;
-                try {
-                    for (IThread th : t.getThreads()) {
-                        if (!th.isSuspended()) continue;
-                        result.put("threadName", safeName(th));
-                        for (IStackFrame f : th.getStackFrames()) {
-                            frames.add(summarizeFrame(f));
-                        }
-                        break outer;
-                    }
-                } catch (DebugException ignored) {}
-            }
+        DebugContextPicker.Selection sel = DebugContextPicker.suspended(0);
+        if (sel != null) {
+            result.put("debugContextSource", sel.source);
+            if (sel.thread != null) result.put("threadName", safeName(sel.thread));
+            try {
+                if (sel.thread != null) {
+                    for (IStackFrame f : sel.thread.getStackFrames()) frames.add(summarizeFrame(f));
+                } else if (sel.frame != null) {
+                    frames.add(summarizeFrame(sel.frame));
+                }
+            } catch (DebugException ignored) {}
         }
         result.put("frames", frames);
         result.put("frameCount", frames.size());
         return result;
     }
-
     /** Variables for the first suspended thread's topmost stack frame. */
     public Map<String, Object> variables(int frameIndex) {
         Map<String, Object> result = new LinkedHashMap<>();
         List<Map<String, Object>> vars = new ArrayList<>();
-        ILaunchManager mgr = DebugPlugin.getDefault().getLaunchManager();
-        outer:
-        for (ILaunch launch : mgr.getLaunches()) {
-            if (launch.isTerminated()) continue;
-            for (IDebugTarget t : launch.getDebugTargets()) {
-                if (!t.isSuspended()) continue;
-                try {
-                    for (IThread th : t.getThreads()) {
-                        if (!th.isSuspended()) continue;
-                        IStackFrame[] fs = th.getStackFrames();
-                        if (fs.length == 0) continue;
-                        int idx = Math.max(0, Math.min(frameIndex, fs.length - 1));
-                        result.put("frameIndex", idx);
-                        result.put("frameName", safeName(fs[idx]));
-                        for (IVariable v : fs[idx].getVariables()) {
-                            vars.add(summarizeVariable(v, 1));
-                        }
-                        break outer;
-                    }
-                } catch (DebugException ignored) {}
-            }
+        DebugContextPicker.Selection sel = DebugContextPicker.suspended(frameIndex);
+        IStackFrame frame = sel != null ? sel.frame : null;
+        if (frame != null) {
+            result.put("debugContextSource", sel.source);
+            result.put("frameIndex", Math.max(0, frameIndex));
+            result.put("frameName", safeName(frame));
+            try {
+                for (IVariable v : frame.getVariables()) vars.add(summarizeVariable(v, 1));
+            } catch (DebugException ignored) {}
         }
         result.put("variables", vars);
         return result;
     }
-
     /** Lightweight status: is anything being debugged? anything halted? */
     public Map<String, Object> status() {
         Map<String, Object> out = new LinkedHashMap<>();
@@ -150,6 +140,27 @@ public final class DebugInspector {
             if (anyHalted) halted++; else running++;
             summary.add(row);
         }
+        DebugContextPicker.Selection activeStopped = DebugContextPicker.suspended(0);
+        Boolean dsfSuspended = DebugContextPicker.dsfSuspendedState(activeStopped);
+        boolean reliableActiveStop = activeStopped != null && (
+                activeStopped.frame != null
+                        || activeStopped.thread != null
+                        || activeStopped.target != null
+                        || Boolean.TRUE.equals(dsfSuspended));
+        if (reliableActiveStop && halted == 0) {
+            halted = 1;
+            if (running > 0) running--;
+            live = Math.max(live, 1);
+            Map<String, Object> active = new LinkedHashMap<>();
+            active.put("configName", null);
+            try { active.put("configName", activeStopped.launch != null && activeStopped.launch.getLaunchConfiguration() != null
+                    ? activeStopped.launch.getLaunchConfiguration().getName() : null); } catch (Throwable ignored) {}
+            active.put("mode", activeStopped.launch != null ? activeStopped.launch.getLaunchMode() : null);
+            active.put("halted", true);
+            active.put("source", activeStopped.source);
+            if (dsfSuspended != null) active.put("dsfSuspended", dsfSuspended);
+            summary.add(active);
+        }
         out.put("anyLive", live > 0);
         out.put("anyHalted", halted > 0);
         out.put("liveLaunches", live);
@@ -166,46 +177,36 @@ public final class DebugInspector {
      */
     public Map<String, Object> location() {
         Map<String, Object> out = new LinkedHashMap<>();
-        ILaunchManager mgr = DebugPlugin.getDefault().getLaunchManager();
-        for (ILaunch launch : mgr.getLaunches()) {
-            if (launch.isTerminated()) continue;
-            for (IDebugTarget t : launch.getDebugTargets()) {
-                try {
-                    if (!t.isSuspended()) continue;
-                    for (IThread th : t.getThreads()) {
-                        if (!th.isSuspended()) continue;
-                        IStackFrame[] fs = th.getStackFrames();
-                        if (fs.length == 0) continue;
-                        IStackFrame top = fs[0];
-                        out.put("halted", true);
-                        try { out.put("configName", launch.getLaunchConfiguration() != null
-                                ? launch.getLaunchConfiguration().getName() : null); }
-                        catch (Throwable ignored) { out.put("configName", null); }
-                        try { out.put("targetName", t.getName()); } catch (Throwable ignored) {}
-                        try { out.put("threadName", th.getName()); } catch (Throwable ignored) {}
-                        out.put("frameCount", fs.length);
-                        out.put("function", safeName(top));
-                        try { out.put("lineNumber", top.getLineNumber()); } catch (DebugException ignored) {}
-                        try { out.put("charStart", top.getCharStart()); } catch (DebugException ignored) {}
-                        try { out.put("charEnd", top.getCharEnd()); } catch (DebugException ignored) {}
-                        // Best-effort source path — lookup through the launch's source locator
-                        try {
-                            Object el = launch.getSourceLocator() != null
-                                    ? launch.getSourceLocator().getSourceElement(top) : null;
-                            if (el != null) {
-                                out.put("sourceElementClass", el.getClass().getName());
-                                out.put("sourceElement", String.valueOf(el));
-                            }
-                        } catch (Throwable tex) { out.put("sourceLookupError", tex.getMessage()); }
-                        return out;
-                    }
-                } catch (DebugException ignored) {}
-            }
+        DebugContextPicker.Selection sel = DebugContextPicker.suspended(0);
+        IStackFrame top = sel != null ? sel.frame : null;
+        if (top == null) {
+            Map<String, Object> dsf = dsfLocation(sel);
+            if (dsf != null) return dsf;
+            out.put("halted", false);
+            return out;
         }
-        out.put("halted", false);
+        out.put("halted", true);
+        out.put("debugContextSource", sel.source);
+        try { out.put("configName", sel.launch != null && sel.launch.getLaunchConfiguration() != null
+                ? sel.launch.getLaunchConfiguration().getName() : null); }
+        catch (Throwable ignored) { out.put("configName", null); }
+        try { if (sel.target != null) out.put("targetName", sel.target.getName()); } catch (Throwable ignored) {}
+        try { if (sel.thread != null) out.put("threadName", sel.thread.getName()); } catch (Throwable ignored) {}
+        try { if (sel.thread != null) out.put("frameCount", sel.thread.getStackFrames().length); } catch (Throwable ignored) {}
+        out.put("function", safeName(top));
+        try { out.put("lineNumber", top.getLineNumber()); } catch (DebugException ignored) {}
+        try { out.put("charStart", top.getCharStart()); } catch (DebugException ignored) {}
+        try { out.put("charEnd", top.getCharEnd()); } catch (DebugException ignored) {}
+        try {
+            Object el = sel.launch != null && sel.launch.getSourceLocator() != null
+                    ? sel.launch.getSourceLocator().getSourceElement(top) : null;
+            if (el != null) {
+                out.put("sourceElementClass", el.getClass().getName());
+                out.put("sourceElement", String.valueOf(el));
+            }
+        } catch (Throwable tex) { out.put("sourceLookupError", tex.getMessage()); }
         return out;
     }
-
     /**
      * Register groups + register values for the first suspended thread's top frame.
      * Generic Debug API (works for CDT standard; some DSF-only registers may be async-only).
@@ -213,59 +214,50 @@ public final class DebugInspector {
     public Map<String, Object> registers() {
         Map<String, Object> out = new LinkedHashMap<>();
         List<Map<String, Object>> groups = new ArrayList<>();
-        ILaunchManager mgr = DebugPlugin.getDefault().getLaunchManager();
-        outer:
-        for (ILaunch launch : mgr.getLaunches()) {
-            if (launch.isTerminated()) continue;
-            for (IDebugTarget t : launch.getDebugTargets()) {
-                try {
-                    if (!t.isSuspended()) continue;
-                    for (IThread th : t.getThreads()) {
-                        if (!th.isSuspended()) continue;
-                        IStackFrame[] fs = th.getStackFrames();
-                        if (fs.length == 0) continue;
-                        IStackFrame top = fs[0];
-                        out.put("halted", true);
-                        out.put("frameName", safeName(top));
-                        if (!top.hasRegisterGroups()) {
-                            out.put("hasRegisterGroups", false);
-                            out.put("groups", groups);
-                            return out;
-                        }
-                        out.put("hasRegisterGroups", true);
-                        for (IRegisterGroup g : top.getRegisterGroups()) {
-                            Map<String, Object> grow = new LinkedHashMap<>();
-                            try { grow.put("name", g.getName()); } catch (DebugException ignored) {}
-                            List<Map<String, Object>> regs = new ArrayList<>();
-                            try {
-                                for (IRegister r : g.getRegisters()) {
-                                    Map<String, Object> rr = new LinkedHashMap<>();
-                                    try { rr.put("name", r.getName()); } catch (DebugException ignored) {}
-                                    try { rr.put("type", r.getReferenceTypeName()); } catch (DebugException ignored) {}
-                                    try {
-                                        IValue v = r.getValue();
-                                        if (v != null) rr.put("value", v.getValueString());
-                                    } catch (DebugException e) {
-                                        rr.put("valueError", e.getMessage());
-                                    }
-                                    regs.add(rr);
-                                }
-                            } catch (DebugException e) {
-                                grow.put("regsError", e.getMessage());
-                            }
-                            grow.put("registers", regs);
-                            groups.add(grow);
-                        }
-                        break outer;
-                    }
-                } catch (DebugException ignored) {}
-            }
+        DebugContextPicker.Selection sel = DebugContextPicker.suspended(0);
+        IStackFrame top = sel != null ? sel.frame : null;
+        if (top == null) {
+            out.put("halted", false);
+            out.put("groups", groups);
+            return out;
         }
-        if (!out.containsKey("halted")) out.put("halted", false);
+        out.put("halted", true);
+        out.put("debugContextSource", sel.source);
+        out.put("frameName", safeName(top));
+        try {
+            if (!top.hasRegisterGroups()) {
+                out.put("hasRegisterGroups", false);
+                out.put("groups", groups);
+                return out;
+            }
+            out.put("hasRegisterGroups", true);
+            for (IRegisterGroup g : top.getRegisterGroups()) {
+                Map<String, Object> grow = new LinkedHashMap<>();
+                try { grow.put("name", g.getName()); } catch (DebugException ignored) {}
+                List<Map<String, Object>> regs = new ArrayList<>();
+                try {
+                    for (IRegister r : g.getRegisters()) {
+                        Map<String, Object> rr = new LinkedHashMap<>();
+                        try { rr.put("name", r.getName()); } catch (DebugException ignored) {}
+                        try { rr.put("type", r.getReferenceTypeName()); } catch (DebugException ignored) {}
+                        try {
+                            IValue v = r.getValue();
+                            if (v != null) rr.put("value", v.getValueString());
+                        } catch (DebugException e) {
+                            rr.put("valueError", e.getMessage());
+                        }
+                        regs.add(rr);
+                    }
+                } catch (DebugException e) {
+                    grow.put("regsError", e.getMessage());
+                }
+                grow.put("registers", regs);
+                groups.add(grow);
+            }
+        } catch (DebugException ignored) {}
         out.put("groups", groups);
         return out;
     }
-
     /**
      * Reads a block of target memory starting at {@code addr} (hex string or decimal) for {@code length} bytes.
      * Requires a suspended debug target that adapts to IMemoryBlockRetrieval.
@@ -334,6 +326,86 @@ public final class DebugInspector {
         }
         out.put("error", "no suspended debug target available");
         return out;
+    }
+
+    private Map<String, Object> dsfLocation(DebugContextPicker.Selection sel) {
+        if (sel == null || sel.dmContext == null) return null;
+        DsfSession session = DsfSession.getSession(sel.dmContext.getSessionId());
+        if (session == null || !session.isActive()) return null;
+        org.osgi.framework.Bundle bundle = FrameworkUtil.getBundle(DebugInspector.class);
+        if (bundle == null || bundle.getBundleContext() == null) return null;
+        DsfServicesTracker tracker = new DsfServicesTracker(bundle.getBundleContext(), session.getId());
+        try {
+            final IStack stack = tracker.getService(IStack.class);
+            if (stack == null) return null;
+            CountDownLatch latch = new CountDownLatch(1);
+            AtomicReference<Map<String, Object>> data = new AtomicReference<>();
+            AtomicReference<String> error = new AtomicReference<>();
+            session.getExecutor().execute(new Runnable() {
+                @Override public void run() {
+                    IStack.IFrameDMContext frame =
+                            DMContexts.getAncestorOfType(sel.dmContext, IStack.IFrameDMContext.class);
+                    if (frame != null) {
+                        readDsfFrame(stack, session, frame, data, error, latch);
+                        return;
+                    }
+                    stack.getTopFrame(sel.dmContext, new DataRequestMonitor<IStack.IFrameDMContext>(session.getExecutor(), null) {
+                        @Override protected void handleCompleted() {
+                            if (isSuccess() && getData() != null) {
+                                readDsfFrame(stack, session, getData(), data, error, latch);
+                            } else {
+                                error.set(getStatus() != null ? getStatus().getMessage() : "no DSF top frame");
+                                latch.countDown();
+                            }
+                        }
+                    });
+                }
+            });
+            if (!latch.await(2, TimeUnit.SECONDS)) return null;
+            Map<String, Object> out = data.get();
+            if (out != null) {
+                out.put("halted", true);
+                out.put("debugContextSource", sel.source);
+                out.put("source", "dsfStack");
+                try { out.put("configName", sel.launch != null && sel.launch.getLaunchConfiguration() != null
+                        ? sel.launch.getLaunchConfiguration().getName() : null); }
+                catch (Throwable ignored) { out.put("configName", null); }
+                return out;
+            }
+            return null;
+        } catch (Throwable ignored) {
+            return null;
+        } finally {
+            tracker.dispose();
+        }
+    }
+
+    private void readDsfFrame(IStack stack, DsfSession session, IStack.IFrameDMContext frame,
+                              AtomicReference<Map<String, Object>> data,
+                              AtomicReference<String> error,
+                              CountDownLatch latch) {
+        stack.getFrameData(frame, new DataRequestMonitor<IStack.IFrameDMData>(session.getExecutor(), null) {
+            @Override protected void handleCompleted() {
+                try {
+                    if (isSuccess() && getData() != null) {
+                        Map<String, Object> row = new LinkedHashMap<>();
+                        row.put("frameLevel", frame.getLevel());
+                        IStack.IFrameDMData fd = getData();
+                        try { row.put("function", fd.getFunction()); } catch (Throwable ignored) {}
+                        try { row.put("file", fd.getFile()); } catch (Throwable ignored) {}
+                        try { row.put("lineNumber", fd.getLine()); } catch (Throwable ignored) {}
+                        try { row.put("column", fd.getColumn()); } catch (Throwable ignored) {}
+                        try { row.put("module", fd.getModule()); } catch (Throwable ignored) {}
+                        try { row.put("address", fd.getAddress() != null ? String.valueOf(fd.getAddress()) : null); } catch (Throwable ignored) {}
+                        data.set(row);
+                    } else {
+                        error.set(getStatus() != null ? getStatus().getMessage() : "no DSF frame data");
+                    }
+                } finally {
+                    latch.countDown();
+                }
+            }
+        });
     }
 
     /** All breakpoints (any type) registered in the workspace. */

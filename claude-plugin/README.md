@@ -12,7 +12,7 @@ From Claude Code:
 
 ```
 /plugin marketplace add bigbangten/s32ds-mcp-bridge
-/plugin install s32ds-mcp
+/plugin install s32
 ```
 
 Then run once:

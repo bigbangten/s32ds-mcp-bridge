@@ -7,8 +7,8 @@
     {
       "name": "s32",
       "source": "./claude-plugin",
-      "description": "Live introspection bridge for NXP S32 Design Studio 3.5.x. Provides /s32 slash commands and a skill that forces AI to verify UI paths against the running workbench instead of guessing from documentation.",
-      "version": "0.1.0"
+      "description": "Live introspection bridge for NXP S32 Design Studio 3.5.x. Provides /s32 slash commands, MCP tools, DSF-aware debug control, and a self-improving skill that verifies against the running workbench.",
+      "version": "0.4.0"
     }
   ]
 }

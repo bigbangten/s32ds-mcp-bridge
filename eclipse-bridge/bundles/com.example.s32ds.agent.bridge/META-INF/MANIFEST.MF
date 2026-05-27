@@ -2,7 +2,7 @@ Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
 Bundle-Name: S32DS Agent Bridge
 Bundle-SymbolicName: com.example.s32ds.agent.bridge;singleton:=true
-Bundle-Version: 0.2.0.qualifier
+Bundle-Version: 0.4.0.qualifier
 Bundle-Vendor: Example
 Bundle-RequiredExecutionEnvironment: JavaSE-11
 Bundle-ActivationPolicy: lazy
@@ -15,7 +15,10 @@ Require-Bundle: org.eclipse.ui,
  org.eclipse.jface,
  org.eclipse.jface.text,
  org.eclipse.swt,
- org.eclipse.debug.core
+ org.eclipse.debug.core,
+ org.eclipse.debug.ui,
+ org.eclipse.cdt.dsf,
+ org.eclipse.cdt.dsf.ui
 Import-Package: com.sun.net.httpserver,
  org.osgi.framework
 Automatic-Module-Name: com.example.s32ds.agent.bridge

@@ -12,14 +12,20 @@ import java.util.List;
 import java.util.Map;
 
 import com.example.s32ds.agent.bridge.BridgeServer;
+import com.example.s32ds.agent.bridge.auth.DangerGate;
 import com.example.s32ds.agent.bridge.exec.BuildController;
 import com.example.s32ds.agent.bridge.exec.EditorController;
 import com.example.s32ds.agent.bridge.exec.WorkbenchController;
+import com.example.s32ds.agent.bridge.index.BreakpointController;
 import com.example.s32ds.agent.bridge.index.CommandIndexer;
 import com.example.s32ds.agent.bridge.index.ConsoleTail;
+import com.example.s32ds.agent.bridge.index.DebugController;
+import com.example.s32ds.agent.bridge.index.DebugContextDiagnostics;
 import com.example.s32ds.agent.bridge.index.DebugInspector;
+import com.example.s32ds.agent.bridge.index.ExpressionController;
 import com.example.s32ds.agent.bridge.index.DialogInspector;
 import com.example.s32ds.agent.bridge.index.LaunchConfigAnalyzer;
+import com.example.s32ds.agent.bridge.index.LaunchRunner;
 import com.example.s32ds.agent.bridge.index.S32dsInventory;
 import com.example.s32ds.agent.bridge.index.ExtensionRegistryIndexer;
 import com.example.s32ds.agent.bridge.index.MarkerIndexer;
@@ -48,6 +54,11 @@ public final class Router {
     private final S32dsInventory s32dsInventory = new S32dsInventory();
     private final LaunchConfigAnalyzer launchAnalyzer = new LaunchConfigAnalyzer();
     private final DebugInspector debugInspector = new DebugInspector();
+    private final DebugContextDiagnostics debugContextDiagnostics = new DebugContextDiagnostics();
+    private final DebugController debugController = new DebugController();
+    private final BreakpointController breakpointController = new BreakpointController();
+    private final ExpressionController expressionController = new ExpressionController();
+    private final LaunchRunner launchRunner = new LaunchRunner();
     private final DialogInspector dialogInspector = new DialogInspector();
     private final ConsoleTail consoleTail = new ConsoleTail();
 
@@ -161,6 +172,10 @@ public final class Router {
             }
             if ("GET".equals(method) && "/debug/sessions".equals(path)) {
                 send(exchange, 200, ok(debugInspector.listSessions()));
+                return;
+            }
+            if ("GET".equals(method) && "/debug/context".equals(path)) {
+                send(exchange, 200, ok(debugContextDiagnostics.inspect()));
                 return;
             }
             if ("GET".equals(method) && "/debug/stackframes".equals(path)) {
@@ -320,6 +335,246 @@ public final class Router {
                 return;
             }
 
+            // ??????????????? Phase 5: danger gate + mutating debug/launch ops ???????????????
+
+            if ("GET".equals(method) && "/danger/state".equals(path)) {
+                send(exchange, 200, ok(DangerGate.snapshot()));
+                return;
+            }
+            if ("POST".equals(method) && "/danger/enable".equals(path)) {
+                long ttl = 0L;
+                try {
+                    Object parsed = Json.parse(readBody(exchange.getRequestBody()));
+                    if (parsed instanceof Map<?, ?>) {
+                        Object t = ((Map<?, ?>) parsed).get("ttlMs");
+                        if (t instanceof Number) ttl = ((Number) t).longValue();
+                        else {
+                            Object s = ((Map<?, ?>) parsed).get("ttlSeconds");
+                            if (s instanceof Number) ttl = ((Number) s).longValue() * 1000L;
+                        }
+                    }
+                } catch (Exception ignored) { /* allow empty body */ }
+                DangerGate.enable(ttl);
+                send(exchange, 200, ok(DangerGate.snapshot()));
+                return;
+            }
+            if ("POST".equals(method) && "/danger/disable".equals(path)) {
+                DangerGate.disable();
+                send(exchange, 200, ok(DangerGate.snapshot()));
+                return;
+            }
+
+            // The mutators below all require the gate.
+            if ("POST".equals(method) && "/debug/step".equals(path)) {
+                if (!DangerGate.isOn()) { sendDangerOff(exchange); return; }
+                String kind = query.get("kind");
+                send(exchange, 200, ok(debugController.step(kind)));
+                return;
+            }
+            if ("POST".equals(method) && "/debug/resume".equals(path)) {
+                if (!DangerGate.isOn()) { sendDangerOff(exchange); return; }
+                send(exchange, 200, ok(debugController.resume()));
+                return;
+            }
+            if ("POST".equals(method) && "/debug/suspend".equals(path)) {
+                if (!DangerGate.isOn()) { sendDangerOff(exchange); return; }
+                send(exchange, 200, ok(debugController.suspend()));
+                return;
+            }
+            if ("POST".equals(method) && "/debug/terminate".equals(path)) {
+                if (!DangerGate.isOn()) { sendDangerOff(exchange); return; }
+                send(exchange, 200, ok(debugController.terminate()));
+                return;
+            }
+            if ("POST".equals(method) && "/debug/restart".equals(path)) {
+                if (!DangerGate.isOn()) { sendDangerOff(exchange); return; }
+                send(exchange, 200, ok(debugController.restart()));
+                return;
+            }
+            if ("POST".equals(method) && "/debug/breakpoints".equals(path)) {
+                if (!DangerGate.isOn()) { sendDangerOff(exchange); return; }
+                Object parsed = Json.parse(readBody(exchange.getRequestBody()));
+                if (!(parsed instanceof Map<?, ?>)) {
+                    send(exchange, 400, error("BAD_REQUEST", "JSON object body is required", null));
+                    return;
+                }
+                Map<?, ?> body = (Map<?, ?>) parsed;
+                String fileSpec = strOrNull(body.get("file"));
+                if (fileSpec == null) fileSpec = strOrNull(body.get("path"));
+                Object ln = body.get("line");
+                int line = (ln instanceof Number) ? ((Number) ln).intValue() : -1;
+                String condition = strOrNull(body.get("condition"));
+                send(exchange, 200, ok(breakpointController.setLineBreakpoint(fileSpec, line, condition)));
+                return;
+            }
+            if ("DELETE".equals(method) && "/debug/breakpoints".equals(path)) {
+                if (!DangerGate.isOn()) { sendDangerOff(exchange); return; }
+                if ("true".equalsIgnoreCase(query.get("all"))) {
+                    send(exchange, 200, ok(breakpointController.clearAll()));
+                    return;
+                }
+                String file = query.get("file");
+                int line = -1;
+                String ls = query.get("line");
+                if (ls != null) { try { line = Integer.parseInt(ls); } catch (NumberFormatException ignored) {} }
+                send(exchange, 200, ok(breakpointController.clearLineBreakpoint(file, line)));
+                return;
+            }
+            if ("POST".equals(method) && "/debug/memory".equals(path)) {
+                if (!DangerGate.isOn()) { sendDangerOff(exchange); return; }
+                Object parsed = Json.parse(readBody(exchange.getRequestBody()));
+                if (!(parsed instanceof Map<?, ?>)) {
+                    send(exchange, 400, error("BAD_REQUEST", "JSON object body is required", null));
+                    return;
+                }
+                Map<?, ?> body = (Map<?, ?>) parsed;
+                String addr = strOrNull(body.get("addr"));
+                String hex = strOrNull(body.get("hex"));
+                send(exchange, 200, ok(debugController.writeMemory(addr, hex)));
+                return;
+            }
+            if ("POST".equals(method) && "/debug/registers".equals(path)) {
+                if (!DangerGate.isOn()) { sendDangerOff(exchange); return; }
+                Object parsed = Json.parse(readBody(exchange.getRequestBody()));
+                if (!(parsed instanceof Map<?, ?>)) {
+                    send(exchange, 400, error("BAD_REQUEST", "JSON object body is required", null));
+                    return;
+                }
+                Map<?, ?> body = (Map<?, ?>) parsed;
+                String group = strOrNull(body.get("group"));
+                String reg = strOrNull(body.get("name"));
+                String val = strOrNull(body.get("value"));
+                send(exchange, 200, ok(debugController.writeRegister(group, reg, val)));
+                return;
+            }
+            if ("POST".equals(method) && "/launch/run".equals(path)) {
+                if (!DangerGate.isOn()) { sendDangerOff(exchange); return; }
+                Object parsed = Json.parse(readBody(exchange.getRequestBody()));
+                if (!(parsed instanceof Map<?, ?>)) {
+                    send(exchange, 400, error("BAD_REQUEST", "JSON object body is required", null));
+                    return;
+                }
+                Map<?, ?> body = (Map<?, ?>) parsed;
+                String cfg = strOrNull(body.get("configName"));
+                if (cfg == null) cfg = strOrNull(body.get("name"));
+                String mode = strOrNull(body.get("mode"));
+                send(exchange, 200, ok(launchRunner.run(cfg, mode)));
+                return;
+            }
+            if ("POST".equals(method) && "/launch/run-with-overrides".equals(path)) {
+                if (!DangerGate.isOn()) { sendDangerOff(exchange); return; }
+                Object parsed = Json.parse(readBody(exchange.getRequestBody()));
+                if (!(parsed instanceof Map<?, ?>)) {
+                    send(exchange, 400, error("BAD_REQUEST", "JSON object body is required", null));
+                    return;
+                }
+                Map<?, ?> body = (Map<?, ?>) parsed;
+                String cfg = strOrNull(body.get("configName"));
+                if (cfg == null) cfg = strOrNull(body.get("name"));
+                String mode = strOrNull(body.get("mode"));
+                String copyName = strOrNull(body.get("copyName"));
+                Object rawOverrides = body.get("overrides");
+                if (rawOverrides != null && !(rawOverrides instanceof Map<?, ?>)) {
+                    send(exchange, 400, error("BAD_REQUEST", "Field 'overrides' must be a JSON object", null));
+                    return;
+                }
+                Map<String, Object> overrides = new LinkedHashMap<>();
+                if (rawOverrides instanceof Map<?, ?>) {
+                    for (Map.Entry<?, ?> e : ((Map<?, ?>) rawOverrides).entrySet()) {
+                        overrides.put(String.valueOf(e.getKey()), e.getValue());
+                    }
+                }
+                send(exchange, 200, ok(launchRunner.runWithOverrides(cfg, mode, copyName, overrides)));
+                return;
+            }
+
+
+            // ??????????????? Phase 6: expression eval / watch / variable / run-to-line ???????????????
+
+            if ("POST".equals(method) && "/debug/evaluate".equals(path)) {
+                if (!DangerGate.isOn()) { sendDangerOff(exchange); return; }
+                Object parsed = Json.parse(readBody(exchange.getRequestBody()));
+                if (!(parsed instanceof Map<?, ?>)) {
+                    send(exchange, 400, error("BAD_REQUEST", "JSON object body is required", null));
+                    return;
+                }
+                Map<?, ?> body = (Map<?, ?>) parsed;
+                String expr = strOrNull(body.get("expression"));
+                int frameIdx = 0;
+                Object f = body.get("frame");
+                if (f instanceof Number) frameIdx = ((Number) f).intValue();
+                send(exchange, 200, ok(expressionController.evaluate(expr, frameIdx)));
+                return;
+            }
+            if ("GET".equals(method) && "/debug/watch".equals(path)) {
+                send(exchange, 200, ok(expressionController.listWatch()));
+                return;
+            }
+            if ("POST".equals(method) && "/debug/watch".equals(path)) {
+                if (!DangerGate.isOn()) { sendDangerOff(exchange); return; }
+                Object parsed = Json.parse(readBody(exchange.getRequestBody()));
+                if (!(parsed instanceof Map<?, ?>)) {
+                    send(exchange, 400, error("BAD_REQUEST", "JSON object body is required", null));
+                    return;
+                }
+                String expr = strOrNull(((Map<?, ?>) parsed).get("expression"));
+                send(exchange, 200, ok(expressionController.addWatch(expr)));
+                return;
+            }
+            if ("DELETE".equals(method) && "/debug/watch".equals(path)) {
+                if (!DangerGate.isOn()) { sendDangerOff(exchange); return; }
+                String expr = query.get("expression");
+                if ("true".equalsIgnoreCase(query.get("all"))) expr = null;
+                send(exchange, 200, ok(expressionController.removeWatch(expr)));
+                return;
+            }
+            if ("POST".equals(method) && "/debug/variable".equals(path)) {
+                if (!DangerGate.isOn()) { sendDangerOff(exchange); return; }
+                Object parsed = Json.parse(readBody(exchange.getRequestBody()));
+                if (!(parsed instanceof Map<?, ?>)) {
+                    send(exchange, 400, error("BAD_REQUEST", "JSON object body is required", null));
+                    return;
+                }
+                Map<?, ?> body = (Map<?, ?>) parsed;
+                String name = strOrNull(body.get("name"));
+                String value = strOrNull(body.get("value"));
+                int frameIdx = 0;
+                Object f = body.get("frame");
+                if (f instanceof Number) frameIdx = ((Number) f).intValue();
+                send(exchange, 200, ok(expressionController.writeVariable(name, value, frameIdx)));
+                return;
+            }
+            if ("POST".equals(method) && "/debug/run-to-line".equals(path)) {
+                if (!DangerGate.isOn()) { sendDangerOff(exchange); return; }
+                Object parsed = Json.parse(readBody(exchange.getRequestBody()));
+                if (!(parsed instanceof Map<?, ?>)) {
+                    send(exchange, 400, error("BAD_REQUEST", "JSON object body is required", null));
+                    return;
+                }
+                Map<?, ?> body = (Map<?, ?>) parsed;
+                String file = strOrNull(body.get("file"));
+                Object ln = body.get("line");
+                int line = (ln instanceof Number) ? ((Number) ln).intValue() : -1;
+                Object skip = body.get("skipBreakpoints");
+                boolean skipBp = skip instanceof Boolean ? (Boolean) skip : false;
+                send(exchange, 200, ok(debugController.runToLine(file, line, skipBp)));
+                return;
+            }
+            if ("POST".equals(method) && "/debug/jump-to-line".equals(path)) {
+                if (!DangerGate.isOn()) { sendDangerOff(exchange); return; }
+                Object parsed = Json.parse(readBody(exchange.getRequestBody()));
+                if (!(parsed instanceof Map<?, ?>)) {
+                    send(exchange, 400, error("BAD_REQUEST", "JSON object body is required", null));
+                    return;
+                }
+                Map<?, ?> body = (Map<?, ?>) parsed;
+                String file = strOrNull(body.get("file"));
+                Object ln = body.get("line");
+                int line = (ln instanceof Number) ? ((Number) ln).intValue() : -1;
+                send(exchange, 200, ok(debugController.jumpToLine(file, line)));
+                return;
+            }
+
             send(exchange, 404, error("NOT_FOUND", "No route for " + method + " " + path, null));
         } catch (IllegalArgumentException e) {
             send(exchange, 400, error("BAD_REQUEST", e.getMessage(), null));
@@ -410,6 +665,20 @@ public final class Router {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String strOrNull(Object o) {
+        if (o == null) return null;
+        String s = String.valueOf(o).trim();
+        return s.isEmpty() ? null : s;
+    }
+
+    private void sendDangerOff(HttpExchange exchange) throws IOException {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("dangerState", DangerGate.snapshot());
+        details.put("hint", "POST /danger/enable {\"ttlMs\": <ms>} or run /s32:danger on first.");
+        send(exchange, 403, error("DANGER_OFF",
+                "Mutating operation requires danger mode. It is currently OFF.", details));
     }
 
     private static final class Json {
