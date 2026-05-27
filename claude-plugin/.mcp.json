@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "s32ds": {
+      "command": "python",
+      "args": [
+        "scripts/bootstrap_and_run.py"
+      ],
+      "env": {
+        "S32DS_BRIDGE_URL": "http://127.0.0.1:39231"
+      }
+    }
+  }
+}

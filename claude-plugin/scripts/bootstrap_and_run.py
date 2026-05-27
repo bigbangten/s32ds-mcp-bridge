@@ -49,15 +49,19 @@ def install_server_package() -> None:
     except ImportError:
         pass
 
-    # This script lives at <plugin_root>/claude-plugin/scripts/bootstrap_and_run.py
-    # The MCP server source lives at <plugin_root>/mcp-server
+    # Repo install: <repo_root>/claude-plugin/scripts/bootstrap_and_run.py
+    # Standalone Codex install: <plugin_root>/scripts/bootstrap_and_run.py
     here = Path(__file__).resolve().parent
-    server_dir = here.parent.parent / "mcp-server"
-    if not server_dir.exists():
+    candidates = [
+        here.parent / "mcp-server",
+        here.parent.parent / "mcp-server",
+    ]
+    server_dir = next((path for path in candidates if path.exists()), None)
+    if server_dir is None:
         # Fallback: maybe the plugin was installed standalone (without mcp-server/ sibling).
         # Try pip install from PyPI once we publish; for now require sibling.
         die(
-            f"mcp-server source not found at {server_dir}. "
+            "mcp-server source not found next to this plugin. "
             "Make sure the plugin was installed from a git repo containing mcp-server/."
         )
 

@@ -1,0 +1,43 @@
+{
+  "name": "s32",
+  "version": "0.4.1",
+  "description": "S32 Design Studio 3.5.x live introspection bridge for Codex.",
+  "author": {
+    "name": "Open-source contributors",
+    "url": "https://github.com/bigbangten/s32ds-mcp-bridge"
+  },
+  "homepage": "https://github.com/bigbangten/s32ds-mcp-bridge",
+  "repository": "https://github.com/bigbangten/s32ds-mcp-bridge",
+  "license": "MIT",
+  "keywords": [
+    "s32ds",
+    "nxp",
+    "eclipse",
+    "mcp",
+    "embedded",
+    "cdt",
+    "pemicro",
+    "arm"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "S32DS MCP Bridge",
+    "shortDescription": "Live S32DS workbench introspection and guarded debug control.",
+    "longDescription": "Adds S32 Design Studio live state, command, menu, build, Problems, launch-config, dialog, console, and guarded debug/launch MCP tools for Codex.",
+    "developerName": "Open-source contributors",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "MCP",
+      "Developer Tools"
+    ],
+    "websiteURL": "https://github.com/bigbangten/s32ds-mcp-bridge",
+    "defaultPrompt": [
+      "Check S32DS status",
+      "Find an S32DS command",
+      "Analyze a launch config"
+    ],
+    "brandColor": "#2563EB"
+  }
+}

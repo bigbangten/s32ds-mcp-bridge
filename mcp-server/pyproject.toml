@@ -1,6 +1,6 @@
 [project]
 name = "s32ds-mcp-server"
-version = "0.4.0"
+version = "0.4.1"
 description = "FastMCP wrapper for the S32DS Eclipse bridge"
 requires-python = ">=3.10"
 dependencies = [

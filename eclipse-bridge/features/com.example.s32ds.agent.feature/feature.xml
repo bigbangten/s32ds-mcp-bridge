@@ -2,7 +2,7 @@
 <feature
       id="com.example.s32ds.agent.feature"
       label="S32DS Agent Bridge"
-      version="0.4.0.qualifier"
+      version="0.4.1.qualifier"
       provider-name="Example">
 
    <description url="https://example.invalid/s32ds-agent-bridge">

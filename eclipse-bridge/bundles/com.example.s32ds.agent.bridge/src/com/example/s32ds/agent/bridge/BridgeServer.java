@@ -22,7 +22,7 @@ import com.example.s32ds.agent.bridge.util.UiThread;
 import com.sun.net.httpserver.HttpServer;
 
 public final class BridgeServer {
-    public static final String BRIDGE_VERSION = "0.4.0";
+    public static final String BRIDGE_VERSION = "0.4.1";
     public static final String DEFAULT_HOST = "127.0.0.1";
     public static final int DEFAULT_PORT = 39231;
 
