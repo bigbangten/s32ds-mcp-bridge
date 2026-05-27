@@ -1,40 +1,37 @@
-# s32ds-mcp (Claude Code plugin)
+# s32 plugin
 
-This directory is the **Claude Code plugin** part of [s32ds-mcp-bridge](../). It packages:
+This directory is the shared plugin root for Claude Code and Codex.
 
-- a skill (`s32ds-menu-lookup`) that forces the AI to verify S32DS UI paths against the live workbench;
-- slash commands (`/s32`, `/s32:setup`, `/s32:status`) that drive the MCP bridge;
-- an MCP server registration (via `plugin.json`) that auto-starts the Python wrapper.
+It contains:
 
-## Install
+- `.claude-plugin/plugin.json` for Claude Code
+- `.codex-plugin/plugin.json` for Codex
+- `.mcp.json` for Codex MCP registration
+- `commands/` for `/s32:*` workflows
+- `skills/s32-menu-lookup/` for live S32DS verification and learned recipes
+- `scripts/bootstrap_and_run.py` for starting the Python MCP server
 
-From Claude Code:
+## Claude Code Install
 
-```
+```text
 /plugin marketplace add bigbangten/s32ds-mcp-bridge
 /plugin install s32
-```
-
-Then run once:
-
-```
 /s32:setup
 ```
 
-This detects your S32DS install, deploys the Eclipse bundle, restarts S32DS, and verifies the bridge responds.
+## Codex Install
 
-## After install
+```bash
+codex plugin marketplace add bigbangten/s32ds-mcp-bridge --ref v0.4.2
+codex plugin add s32@s32ds-mcp-bridge
+```
 
-- `/s32 status` — quick health + current perspective/editor
-- `/s32 menu "<keyword>"` — find where any command lives in the UI (via live workbench, not documentation)
-- `/s32 view <name>` — open a closed view
-- `/s32 perspective <name>` — switch perspective
-- `/s32 problems` — dump Problems view
+Start a new Codex thread after installing so the new skill and MCP tools are loaded.
 
-Any time you ask a free-form S32DS UI question, the `s32ds-menu-lookup` skill auto-activates and follows its 5-step verification protocol. This is the design goal — no more "click the menu that doesn't exist".
+## Setup
 
-## Why this plugin exists
+Run `/s32:setup` where slash commands are available, or follow the repo-level [`INSTALL.md`](../INSTALL.md). Setup installs the Eclipse bundle into S32DS, restarts S32DS once with `-clean`, and verifies the local bridge.
 
-Every AI assistant confidently points users to S32DS menus that don't exist in their specific install. This plugin replaces the guessing with live introspection so the AI has actual ground truth.
+## Safety
 
-See the [top-level README](../README.md) for architecture and the motivating story.
+The bridge binds to `127.0.0.1` and requires a bearer token. Mutating debug/launch operations are blocked until danger mode is explicitly enabled and expire automatically.

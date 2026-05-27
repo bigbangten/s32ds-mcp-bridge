@@ -1,6 +1,6 @@
 {
   "name": "s32",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "S32 Design Studio 3.5.x live introspection bridge for Codex.",
   "author": {
     "name": "Open-source contributors",

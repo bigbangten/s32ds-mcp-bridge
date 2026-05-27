@@ -1,36 +1,60 @@
 # Security Model
 
-## 기본 원칙
+## Boundaries
 
-1. Bridge는 `127.0.0.1` 에만 bind 한다.
-2. 모든 endpoint는 bearer token을 요구한다.
-3. 토큰은 workspace metadata 아래 파일로 저장한다.
-4. Phase 1 endpoint는 읽기 전용이다.
-5. CORS는 기본적으로 비활성이다.
+- The bridge binds only to `127.0.0.1`.
+- Every endpoint requires `Authorization: Bearer <token>`.
+- The token is generated inside the S32DS workspace and mirrored into `%USERPROFILE%\.s32ds-mcp\bridge.json` for local MCP discovery.
+- No endpoint exposes arbitrary shell execution.
 
-## 토큰
+## Token Storage
 
-- 경로: `<workspace>/.metadata/.plugins/com.example.s32ds.agent.bridge/token`
-- 생성 방식: `SecureRandom` 32바이트를 Base64 URL-safe 문자열로 인코딩
-- 우선순위:
-  1. `S32DS_AGENT_TOKEN` 환경변수
-  2. 기존 토큰 파일
-  3. 새 랜덤 토큰 생성
+Primary token path:
 
-## 파일 권한
+```text
+<workspace>/.metadata/.plugins/com.example.s32ds.agent.bridge/token
+```
 
-Windows에서는 `AclFileAttributeView`를 사용해 현재 사용자만 읽고 쓸 수 있도록 ACL을 줄이려고 시도한다. ACL 강제는 파일시스템과 권한 모델에 따라 제한될 수 있으므로 실패 시 bridge 시작을 막지는 않고 로그만 남긴다.
+Discovery path:
 
-## 네트워크 범위
+```text
+%USERPROFILE%/.s32ds-mcp/bridge.json
+```
 
-- 허용: `http://127.0.0.1:<port>`
-- 금지: `0.0.0.0`, 외부 NIC bind, 인증 없는 공개 HTTP
+The token is generated with `SecureRandom` and encoded as URL-safe Base64. On Windows, the bridge attempts to tighten ACLs to the current user. If ACL tightening fails, startup continues and logs the problem.
 
-## 포트
+## Mutating Operations
 
-- 기본 포트: `39231`
-- 오버라이드: `S32DS_AGENT_PORT`
+Read-only inspection tools are always available with a valid token.
 
-## Allowlist
+Operations that can change the target, debugger state, launch state, memory, registers, breakpoints, or watch expressions require the time-limited danger gate. Examples:
 
-Phase 1은 mutation을 노출하지 않지만, 향후 command 실행 단계에서 allowlist가 필요하다. 샘플 파일은 [samples/allowlist.example.json](/D:/workspace_ai/s32ds-mcp-agent/samples/allowlist.example.json)에 둔다.
+- launch run / run with overrides
+- resume, step, suspend, terminate, restart
+- breakpoint set/clear
+- memory/register writes
+- expression evaluation with side effects
+- variable writes
+- run-to-line and jump-to-line
+
+The MCP skill and command docs instruct agents to enable danger mode only after an explicit user request in the current turn.
+
+## Network Scope
+
+Allowed:
+
+```text
+http://127.0.0.1:<port>
+```
+
+Forbidden by design:
+
+```text
+0.0.0.0
+LAN/WAN interfaces
+Unauthenticated public HTTP
+```
+
+## Filesystem Scope
+
+The bridge reads S32DS workspace metadata and Eclipse workbench state. It does not provide arbitrary file write APIs. File opening and editor saves go through Eclipse workbench APIs.

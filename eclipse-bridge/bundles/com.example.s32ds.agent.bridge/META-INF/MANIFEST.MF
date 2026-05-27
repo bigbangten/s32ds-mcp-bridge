@@ -2,7 +2,7 @@ Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
 Bundle-Name: S32DS Agent Bridge
 Bundle-SymbolicName: com.example.s32ds.agent.bridge;singleton:=true
-Bundle-Version: 0.4.1.qualifier
+Bundle-Version: 0.4.2.qualifier
 Bundle-Vendor: Example
 Bundle-RequiredExecutionEnvironment: JavaSE-11
 Bundle-ActivationPolicy: lazy

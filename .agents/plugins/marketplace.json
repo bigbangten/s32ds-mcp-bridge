@@ -1,0 +1,20 @@
+{
+  "name": "s32ds-mcp-bridge",
+  "interface": {
+    "displayName": "S32DS MCP Bridge"
+  },
+  "plugins": [
+    {
+      "name": "s32",
+      "source": {
+        "source": "local",
+        "path": "./claude-plugin"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 {
   "name": "s32",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "S32 Design Studio 3.5.x live introspection bridge. Gives Claude/Codex accurate menu paths, command IDs, workbench state, build/problem info, launch analysis, DSF-aware debug control, and dialog inspection so the AI stops guessing.",
   "author": {
     "name": "Open-source contributors"

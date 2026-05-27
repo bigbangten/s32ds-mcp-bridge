@@ -1,77 +1,73 @@
-# Phase 1 Architecture
+# Architecture
 
-## 목표
+The bridge has three layers:
 
-Phase 1은 S32DS 3.5.x 내부 Eclipse Workbench를 read-only로 탐색하는 bridge를 만든다. 화면 OCR이나 접근성 트리를 사용하지 않고, Eclipse 내부 registry와 workbench service를 통해 데이터를 수집한다.
+1. An Eclipse/OSGi bundle loaded inside S32 Design Studio.
+2. A localhost HTTP API with bearer-token authentication.
+3. A Python MCP server and shared Claude Code / Codex plugin package.
 
-## 구성 요소
+## Eclipse Bundle
 
-1. Eclipse bridge bundle
-   - `AgentEarlyStartup`: S32DS 시작 시 bridge 부팅
-   - `BridgeServer`: `127.0.0.1` 전용 `HttpServer`
-   - `Router`: 인증, 라우팅, JSON 응답 포맷
-   - `TokenStore`: workspace metadata 아래 bearer token 유지
-   - `UiThread`: 모든 Workbench/SWT 접근을 `syncExec`로 강제
-   - indexers:
-     - `CommandIndexer`
-     - `ExtensionRegistryIndexer`
-     - `MenuMaterializer`
-     - `StateInspector`
-     - `ViewIndexer`
-     - `PerspectiveIndexer`
-     - `WizardIndexer`
+The bundle starts during S32DS workbench startup and binds an HTTP server to `127.0.0.1`.
 
-2. Python MCP server
-   - `bridge_client.py`: `httpx` 기반 bridge wrapper
-   - `server.py`: FastMCP resources/tools 등록
-   - `tests/test_server.py`: bridge 모킹 기반 단위 테스트
+Important components:
 
-## 요청 흐름
+- `AgentEarlyStartup`: starts the bridge during S32DS startup.
+- `BridgeServer`: owns the local HTTP server and discovery file.
+- `Router`: request routing, JSON envelopes, auth checks, and danger-gate enforcement.
+- `TokenStore`: creates and stores the workspace bearer token.
+- `DiscoveryFile`: writes `%USERPROFILE%\.s32ds-mcp\bridge.json`.
+- `UiThread`: runs SWT/Workbench operations on the UI thread.
+- `DangerGate`: time-limited gate for mutating debug/launch operations.
 
-1. S32DS 실행
-2. `AgentEarlyStartup`가 `BridgeServer.startAsync()` 호출
-3. `BridgeServer`가 `TokenStore`에서 token 준비 후 `127.0.0.1:<port>`에 bind
-4. 외부 Python MCP 서버가 bridge endpoint 호출
-5. 라우터가 bearer token 검사
-6. 인덱서가 UI thread에서 필요한 Workbench 정보를 읽음
-7. bridge가 표준 JSON envelope로 반환
+Workbench and environment helpers:
 
-## API 경계
+- `StateInspector`, `CommandIndexer`, `ExtensionRegistryIndexer`, `MenuMaterializer`
+- `ViewIndexer`, `PerspectiveIndexer`, `WizardIndexer`
+- `S32dsInventory`, launch config and console helpers
 
-Phase 1에서 구현되는 endpoint:
+Debug helpers:
 
-- `GET /health`
-- `GET /state`
-- `GET /commands`
-- `GET /commands/search?q=`
-- `GET /registry/menus`
-- `GET /registry/legacy-actions`
-- `GET /views`
-- `GET /perspectives`
-- `GET /wizards?type=`
-- `POST /visible-menu`
+- `DebugInspector`, `DebugContextPicker`, `DebugContextDiagnostics`
+- `DebugController`, `BreakpointController`, `ExpressionController`, `LaunchRunner`
 
-Phase 1은 mutation endpoint를 열지 않는다.
+The debug path is CDT/DSF-aware because S32DS/PEmicro sessions often expose active stack frames as DSF view-model contexts rather than classic `IDebugTarget`/`IThread` objects.
 
-## 데이터 수집 전략
+## Python MCP Server
 
-### Registry 후보
+`mcp-server/src/s32ds_mcp_server` wraps the HTTP API as MCP resources and tools.
 
-아직 UI에 나타나지 않은 contribution도 확인하기 위해 `IExtensionRegistry`를 읽는다.
+The client resolves bridge connection data in this order:
 
-- 메뉴: `org.eclipse.ui.menus`
-- legacy actions: `org.eclipse.ui.actionSets`, `org.eclipse.ui.popupMenus`
-- views: `org.eclipse.ui.views`
-- perspectives: `org.eclipse.ui.perspectives`
-- wizards: `org.eclipse.ui.newWizards`, `org.eclipse.ui.importWizards`, `org.eclipse.ui.exportWizards`
+1. `S32DS_BRIDGE_URL` / `S32DS_BRIDGE_TOKEN` environment variables.
+2. `%USERPROFILE%\.s32ds-mcp\bridge.json`.
+3. Legacy workspace token-file fallback.
 
-### 현재 context materialization
+The shared plugin root also includes a copy of the MCP server under `claude-plugin/mcp-server` so Claude Code and Codex marketplace installs are self-contained.
 
-현재 perspective, selection, active editor 기준으로 실제 보이는 메뉴를 확인하기 위해 `IMenuService.populateContributionManager()`를 사용한다.
+## Plugin Packaging
 
-## JSON 응답 형식
+The same plugin root supports both clients:
 
-모든 응답은 아래 envelope를 사용한다.
+```text
+claude-plugin/
+  .claude-plugin/plugin.json
+  .codex-plugin/plugin.json
+  .mcp.json
+  commands/
+  scripts/
+  skills/
+  mcp-server/
+```
+
+Repository-level marketplace metadata:
+
+- `.claude-plugin/marketplace.json` for Claude Code.
+- `.agents/plugins/marketplace.json` for Codex.
+
+## Response Envelope
+
+HTTP responses use a consistent JSON envelope:
 
 ```json
 {
@@ -82,15 +78,4 @@ Phase 1은 mutation endpoint를 열지 않는다.
 }
 ```
 
-오류 시 `ok=false`, `data=null`, `error.code`, `error.message`, `error.details`를 채운다.
-
-## 비목표
-
-- command 실행
-- view 열기
-- perspective 전환
-- build/marker 수집
-- wizard fallback
-- S32DS/NXP 특화 inventory 분류
-
-이 항목들은 Phase 2 이후 범위다.
+Errors set `ok=false`, `data=null`, and include `error.code`, `error.message`, and optional details.

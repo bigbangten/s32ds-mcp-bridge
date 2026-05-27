@@ -167,4 +167,4 @@ Tell the user about the companion commands:
 - `/s32 status` — check health any time
 - `/s32 menu "X"` — find any UI path
 - `/s32 view "X"` — open a view
-- Skill `s32ds-menu-lookup` auto-activates when they ask S32DS UI questions
+- Skill `s32-menu-lookup` auto-activates when they ask S32DS UI questions
