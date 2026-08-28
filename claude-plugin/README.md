@@ -22,7 +22,7 @@ It contains:
 ## Codex Install
 
 ```bash
-codex plugin marketplace add bigbangten/s32ds-mcp-bridge --ref v0.4.2
+codex plugin marketplace add bigbangten/s32ds-mcp-bridge --ref v0.4.3
 codex plugin add s32@s32ds-mcp-bridge
 ```
 

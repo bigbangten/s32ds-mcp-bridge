@@ -27,6 +27,8 @@ The token is generated with `SecureRandom` and encoded as URL-safe Base64. On Wi
 
 Read-only inspection tools are always available with a valid token.
 
+`debug_snapshot` is also read-only and does not require the danger gate. Its parser accepts only identifiers, numeric array indexes, and field access. Calls, assignments, arithmetic, casts, and pointer dereferences are rejected before the debugger evaluates anything.
+
 Operations that can change the target, debugger state, launch state, memory, registers, breakpoints, or watch expressions require the time-limited danger gate. Examples:
 
 - launch run / run with overrides
@@ -38,6 +40,8 @@ Operations that can change the target, debugger state, launch state, memory, reg
 - run-to-line and jump-to-line
 
 The MCP skill and command docs instruct agents to enable danger mode only after an explicit user request in the current turn.
+
+When multiple live debug launches exist, selected run-control operations require an unambiguous launch/session selector. Background suspend/resume keeps UI-command fallback disabled by default so an NXP SVD view cannot be activated as a side effect.
 
 ## Network Scope
 

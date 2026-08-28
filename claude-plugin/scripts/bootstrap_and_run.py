@@ -43,12 +43,6 @@ def ensure_module(module_name: str, pip_spec: str | None = None) -> None:
 
 def install_server_package() -> None:
     """Install (or editable-install) the s32ds_mcp_server package bundled with this plugin."""
-    try:
-        import s32ds_mcp_server  # noqa: F401
-        return
-    except ImportError:
-        pass
-
     # Repo install: <repo_root>/claude-plugin/scripts/bootstrap_and_run.py
     # Standalone Codex install: <plugin_root>/scripts/bootstrap_and_run.py
     here = Path(__file__).resolve().parent
@@ -57,6 +51,26 @@ def install_server_package() -> None:
         here.parent.parent / "mcp-server",
     ]
     server_dir = next((path for path in candidates if path.exists()), None)
+    if server_dir is not None:
+        # Always prefer this plugin's bundled source over an older editable or
+        # user-site installation left by a previous plugin version.
+        bundled_src = server_dir / "src"
+        if bundled_src.exists():
+            sys.path.insert(0, str(bundled_src))
+            try:
+                import s32ds_mcp_server  # noqa: F401
+                return
+            except ImportError:
+                pass
+
+    # A manually installed package is only a fallback when bundled source is
+    # unavailable or incomplete.
+    try:
+        import s32ds_mcp_server  # noqa: F401
+        return
+    except ImportError:
+        pass
+
     if server_dir is None:
         # Fallback: maybe the plugin was installed standalone (without mcp-server/ sibling).
         # Try pip install from PyPI once we publish; for now require sibling.

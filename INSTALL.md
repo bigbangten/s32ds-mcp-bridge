@@ -22,7 +22,7 @@ This document is written for an AI agent to execute, but humans can follow it di
 ### Codex
 
 ```bash
-codex plugin marketplace add bigbangten/s32ds-mcp-bridge --ref v0.4.2
+codex plugin marketplace add bigbangten/s32ds-mcp-bridge --ref v0.4.3
 codex plugin add s32@s32ds-mcp-bridge
 ```
 

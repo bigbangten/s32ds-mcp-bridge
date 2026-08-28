@@ -28,10 +28,14 @@ Workbench and environment helpers:
 
 Debug helpers:
 
-- `DebugInspector`, `DebugContextPicker`, `DebugContextDiagnostics`
-- `DebugController`, `BreakpointController`, `ExpressionController`, `LaunchRunner`
+- `DebugInspector`, `DebugContextPicker`, `DebugContextDiagnostics`, `DebugSessionSelector`
+- `DebugController`, `DebugSnapshotReader`, `BreakpointController`, `ExpressionController`, `LaunchRunner`
 
 The debug path is CDT/DSF-aware because S32DS/PEmicro sessions often expose active stack frames as DSF view-model contexts rather than classic `IDebugTarget`/`IThread` objects.
+
+`debug_status` and `debug_sessions` expose stable identifiers for each live launch. Targeted operations accept a launch configuration name, DSF session id, or launch id. If more than one live debug launch matches, the bridge fails closed and asks the caller to select one. Background resume/suspend uses DSF directly when available and does not activate a workbench view unless UI fallback is explicitly requested.
+
+`debug_snapshot` evaluates a bounded batch of validated C variable paths against one suspended frame. It creates fresh DSF expression contexts for every request and never adds persistent watches. `BridgeServer` health checks use bounded asynchronous SWT and DSF probes so a wedged workbench does not also wedge the HTTP health endpoint.
 
 ## Python MCP Server
 

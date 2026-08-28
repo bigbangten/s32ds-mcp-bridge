@@ -116,6 +116,14 @@ async def post_show_view(view_id: str) -> dict[str, Any]:
     return await bridge_client.post_json("/show-view", {"viewId": view_id})
 
 
+async def post_hide_view(view_id: str,
+                         secondary_id: Optional[str] = None) -> dict[str, Any]:
+    body: dict[str, Any] = {"viewId": view_id}
+    if secondary_id:
+        body["secondaryId"] = secondary_id
+    return await bridge_client.post_json("/hide-view", body)
+
+
 async def post_switch_perspective(perspective_id: str) -> dict[str, Any]:
     return await bridge_client.post_json("/switch-perspective", {"perspectiveId": perspective_id})
 
@@ -204,6 +212,25 @@ async def fetch_debug_memory(addr: str, length: int = 64) -> dict[str, Any]:
     return await bridge_client.get_json(f"/debug/memory?addr={quote_plus(addr)}&length={length}")
 
 
+async def fetch_debug_snapshot(expressions: list[str], frame: int = 0,
+                               format: str = "natural",
+                               config_name: Optional[str] = None,
+                               session_id: Optional[str] = None,
+                               launch_id: Optional[str] = None) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "expressions": expressions,
+        "frame": int(frame),
+        "format": format,
+    }
+    if config_name:
+        body["configName"] = config_name
+    if session_id:
+        body["sessionId"] = session_id
+    if launch_id:
+        body["launchId"] = launch_id
+    return await bridge_client.post_json("/debug/snapshot", body)
+
+
 async def fetch_dialogs_open() -> dict[str, Any]:
     return await bridge_client.get_json("/dialogs/open")
 
@@ -249,20 +276,53 @@ async def call_debug_step(kind: str = "over") -> dict[str, Any]:
     return await bridge_client.post_json(f"/debug/step?kind={quote_plus(kind)}", {})
 
 
-async def call_debug_resume() -> dict[str, Any]:
-    return await bridge_client.post_json("/debug/resume", {})
+def _debug_selector_body(config_name: Optional[str] = None,
+                         session_id: Optional[str] = None,
+                         launch_id: Optional[str] = None) -> dict[str, Any]:
+    body: dict[str, Any] = {}
+    if config_name:
+        body["configName"] = config_name
+    if session_id:
+        body["sessionId"] = session_id
+    if launch_id:
+        body["launchId"] = launch_id
+    return body
 
 
-async def call_debug_suspend() -> dict[str, Any]:
-    return await bridge_client.post_json("/debug/suspend", {})
+async def call_debug_resume(config_name: Optional[str] = None,
+                            session_id: Optional[str] = None,
+                            launch_id: Optional[str] = None,
+                            allow_ui_fallback: bool = False) -> dict[str, Any]:
+    body = _debug_selector_body(config_name, session_id, launch_id)
+    body["allowUiFallback"] = bool(allow_ui_fallback)
+    return await bridge_client.post_json("/debug/resume", body)
 
 
-async def call_debug_terminate() -> dict[str, Any]:
-    return await bridge_client.post_json("/debug/terminate", {})
+async def call_debug_suspend(config_name: Optional[str] = None,
+                             session_id: Optional[str] = None,
+                             launch_id: Optional[str] = None,
+                             allow_ui_fallback: bool = False) -> dict[str, Any]:
+    body = _debug_selector_body(config_name, session_id, launch_id)
+    body["allowUiFallback"] = bool(allow_ui_fallback)
+    return await bridge_client.post_json("/debug/suspend", body)
 
 
-async def call_debug_restart() -> dict[str, Any]:
-    return await bridge_client.post_json("/debug/restart", {})
+async def call_debug_terminate(config_name: Optional[str] = None,
+                               session_id: Optional[str] = None,
+                               launch_id: Optional[str] = None,
+                               all: bool = False) -> dict[str, Any]:
+    body = _debug_selector_body(config_name, session_id, launch_id)
+    body["all"] = bool(all)
+    return await bridge_client.post_json("/debug/terminate", body)
+
+
+async def call_debug_restart(config_name: Optional[str] = None,
+                             session_id: Optional[str] = None,
+                             launch_id: Optional[str] = None) -> dict[str, Any]:
+    return await bridge_client.post_json(
+        "/debug/restart",
+        _debug_selector_body(config_name, session_id, launch_id),
+    )
 
 
 async def call_debug_breakpoint_set(file: str, line: int,
@@ -412,7 +472,11 @@ def create_server() -> FastMCP:
     # ??? Phase 1 tools ???
     @mcp.tool()
     async def health() -> dict[str, Any]:
-        """Check whether the S32DS bridge is reachable and S32DS is running."""
+        """Check bridge, workbench UI, and DSF executor responsiveness.
+
+        The HTTP call remains bounded when SWT is wedged. Inspect uiResponsive,
+        dsfResponsive, their round-trip times, and activeDsfSessions separately.
+        """
         return await fetch_health()
 
     @mcp.tool()
@@ -470,6 +534,16 @@ def create_server() -> FastMCP:
     async def show_view(view_id: str) -> dict[str, Any]:
         """Open a view in the workbench by its view id (e.g. 'org.eclipse.ui.views.TaskList')."""
         return await post_show_view(view_id)
+
+    @mcp.tool()
+    async def hide_view(view_id: str,
+                        secondary_id: Optional[str] = None) -> dict[str, Any]:
+        """Hide an open view without activating S32DS or changing OS foreground focus.
+
+        The call is idempotent: an already hidden view returns alreadyHidden.
+        secondary_id selects one instance of a multi-instance Eclipse view.
+        """
+        return await post_hide_view(view_id, secondary_id)
 
     @mcp.tool()
     async def switch_perspective(perspective_id: str) -> dict[str, Any]:
@@ -567,8 +641,8 @@ def create_server() -> FastMCP:
     async def debug_status() -> dict[str, Any]:
         """Lightweight debug status: anyLive/anyHalted + per-launch halted flags.
 
-        Fast one-shot answer to "is something being debugged?" / "is it halted?" without
-        pulling full stack/variable state. Use before debug_location / debug_registers.
+        Uses launch/DSF services without activating a view. Each row includes
+        launchId/sessionId for unambiguous multi-board operations.
         """
         return await fetch_debug_status()
 
@@ -601,6 +675,24 @@ def create_server() -> FastMCP:
         (standard for CDT + PEmicro/GDB). Never writes memory.
         """
         return await fetch_debug_memory(addr, length)
+
+    @mcp.tool()
+    async def debug_snapshot(expressions: list[str], frame: int = 0,
+                             format: str = "natural",
+                             config_name: Optional[str] = None,
+                             session_id: Optional[str] = None,
+                             launch_id: Optional[str] = None) -> dict[str, Any]:
+        """Read a fresh batch of safe variable paths from one suspended target.
+
+        This read-only tool does not require danger mode and does not touch the
+        Expressions view. Accepted paths are identifiers with optional numeric
+        indexes and field access, for example counter or ports[0].quality.
+        Select a target with config_name, session_id, or launch_id; IDs are
+        returned by debug_status/debug_sessions.
+        """
+        return await fetch_debug_snapshot(
+            expressions, frame, format, config_name, session_id, launch_id
+        )
 
     @mcp.tool()
     async def dialogs_open() -> dict[str, Any]:
@@ -669,24 +761,56 @@ def create_server() -> FastMCP:
         return await call_debug_step(kind)
 
     @mcp.tool()
-    async def debug_resume() -> dict[str, Any]:
-        """Resume the first suspended debug target. Requires danger mode."""
-        return await call_debug_resume()
+    async def debug_resume(config_name: Optional[str] = None,
+                           session_id: Optional[str] = None,
+                           launch_id: Optional[str] = None,
+                           allow_ui_fallback: bool = False) -> dict[str, Any]:
+        """Resume one suspended target without activating a view.
+
+        Select by config_name, session_id, or launch_id. With no selector this
+        works only when exactly one live debug launch exists; otherwise it
+        fails closed and asks for an ID. Requires danger mode.
+        allow_ui_fallback is false by default to avoid stealing focus or
+        triggering problematic SVD views.
+        """
+        return await call_debug_resume(
+            config_name, session_id, launch_id, allow_ui_fallback
+        )
 
     @mcp.tool()
-    async def debug_suspend() -> dict[str, Any]:
-        """Suspend the first running debug target. Requires danger mode."""
-        return await call_debug_suspend()
+    async def debug_suspend(config_name: Optional[str] = None,
+                            session_id: Optional[str] = None,
+                            launch_id: Optional[str] = None,
+                            allow_ui_fallback: bool = False) -> dict[str, Any]:
+        """Suspend one running target directly through DSF, in the background.
+
+        Select by config_name, session_id, or launch_id. With no selector this
+        works only when exactly one live debug launch exists; otherwise it
+        fails closed and asks for an ID. Requires danger mode.
+        UI fallback is opt-in because it can activate Debug/SVD views.
+        """
+        return await call_debug_suspend(
+            config_name, session_id, launch_id, allow_ui_fallback
+        )
 
     @mcp.tool()
-    async def debug_terminate() -> dict[str, Any]:
-        """Terminate ALL live launches. Requires danger mode. Returns count terminated."""
-        return await call_debug_terminate()
+    async def debug_terminate(config_name: Optional[str] = None,
+                              session_id: Optional[str] = None,
+                              launch_id: Optional[str] = None,
+                              all: bool = False) -> dict[str, Any]:
+        """Terminate one selected launch, or all only when all=True is explicit.
+
+        Pass config_name/session_id/launch_id to select one launch. With no
+        selector, all=False fails closed. Requires danger mode.
+        """
+        return await call_debug_terminate(config_name, session_id, launch_id, all)
 
     @mcp.tool()
-    async def debug_restart() -> dict[str, Any]:
-        """Terminate the first live launch and re-launch its configuration in the same mode."""
-        return await call_debug_restart()
+    async def debug_restart(config_name: Optional[str] = None,
+                            session_id: Optional[str] = None,
+                            launch_id: Optional[str] = None) -> dict[str, Any]:
+        """Restart one selected live launch in the same mode. Requires danger mode."""
+        return await call_debug_restart(config_name, session_id, launch_id)
 
     @mcp.tool()
     async def debug_breakpoint_set(file: str, line: int,

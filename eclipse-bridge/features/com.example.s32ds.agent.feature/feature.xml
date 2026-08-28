@@ -2,7 +2,7 @@
 <feature
       id="com.example.s32ds.agent.feature"
       label="S32DS Agent Bridge"
-      version="0.4.2.qualifier"
+      version="0.4.3.qualifier"
       provider-name="Example">
 
    <description url="https://github.com/bigbangten/s32ds-mcp-bridge">

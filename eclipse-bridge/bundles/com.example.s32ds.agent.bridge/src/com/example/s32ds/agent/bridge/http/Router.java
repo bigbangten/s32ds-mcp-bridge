@@ -22,6 +22,7 @@ import com.example.s32ds.agent.bridge.index.ConsoleTail;
 import com.example.s32ds.agent.bridge.index.DebugController;
 import com.example.s32ds.agent.bridge.index.DebugContextDiagnostics;
 import com.example.s32ds.agent.bridge.index.DebugInspector;
+import com.example.s32ds.agent.bridge.index.DebugSnapshotReader;
 import com.example.s32ds.agent.bridge.index.ExpressionController;
 import com.example.s32ds.agent.bridge.index.DialogInspector;
 import com.example.s32ds.agent.bridge.index.LaunchConfigAnalyzer;
@@ -54,6 +55,7 @@ public final class Router {
     private final S32dsInventory s32dsInventory = new S32dsInventory();
     private final LaunchConfigAnalyzer launchAnalyzer = new LaunchConfigAnalyzer();
     private final DebugInspector debugInspector = new DebugInspector();
+    private final DebugSnapshotReader debugSnapshotReader = new DebugSnapshotReader();
     private final DebugContextDiagnostics debugContextDiagnostics = new DebugContextDiagnostics();
     private final DebugController debugController = new DebugController();
     private final BreakpointController breakpointController = new BreakpointController();
@@ -303,6 +305,22 @@ public final class Router {
                 send(exchange, 200, ok(workbenchController.showView(viewId)));
                 return;
             }
+            if ("POST".equals(method) && "/hide-view".equals(path)) {
+                Object parsed = Json.parse(readBody(exchange.getRequestBody()));
+                if (!(parsed instanceof Map<?, ?>)) {
+                    send(exchange, 400, error("BAD_REQUEST", "JSON object body is required", null));
+                    return;
+                }
+                Map<?, ?> body = (Map<?, ?>) parsed;
+                String viewId = strOrNull(body.get("viewId"));
+                if (viewId == null) {
+                    send(exchange, 400, error("BAD_REQUEST", "Field 'viewId' is required", null));
+                    return;
+                }
+                String secondaryId = strOrNull(body.get("secondaryId"));
+                send(exchange, 200, ok(workbenchController.hideView(viewId, secondaryId)));
+                return;
+            }
             if ("POST".equals(method) && "/switch-perspective".equals(path)) {
                 Object parsed = Json.parse(readBody(exchange.getRequestBody()));
                 if (!(parsed instanceof Map<?, ?>)) {
@@ -332,6 +350,38 @@ public final class Router {
                     return;
                 }
                 send(exchange, 200, ok(menuMaterializer.materialize(value)));
+                return;
+            }
+
+            // Read-only, fresh DSF snapshot. The reader validates a restricted
+            // variable-path grammar, so this endpoint intentionally does not
+            // require the danger gate.
+            if ("POST".equals(method) && "/debug/snapshot".equals(path)) {
+                Object parsed = Json.parse(readBody(exchange.getRequestBody()));
+                if (!(parsed instanceof Map<?, ?>)) {
+                    send(exchange, 400, error("BAD_REQUEST", "JSON object body is required", null));
+                    return;
+                }
+                Map<?, ?> body = (Map<?, ?>) parsed;
+                Object rawExpressions = body.get("expressions");
+                if (!(rawExpressions instanceof List<?>)) {
+                    send(exchange, 400, error("BAD_REQUEST", "Field 'expressions' must be a JSON array", null));
+                    return;
+                }
+                List<String> expressions = new ArrayList<>();
+                for (Object item : (List<?>) rawExpressions) {
+                    expressions.add(item != null ? String.valueOf(item) : null);
+                }
+                int frameIdx = 0;
+                Object frame = body.get("frame");
+                if (frame instanceof Number) frameIdx = ((Number) frame).intValue();
+                send(exchange, 200, ok(debugSnapshotReader.snapshot(
+                        expressions,
+                        frameIdx,
+                        strOrNull(body.get("format")),
+                        strOrNull(body.get("configName")),
+                        strOrNull(body.get("sessionId")),
+                        strOrNull(body.get("launchId")))));
                 return;
             }
 
@@ -373,22 +423,41 @@ public final class Router {
             }
             if ("POST".equals(method) && "/debug/resume".equals(path)) {
                 if (!DangerGate.isOn()) { sendDangerOff(exchange); return; }
-                send(exchange, 200, ok(debugController.resume()));
+                Map<?, ?> body = objectBody(exchange);
+                send(exchange, 200, ok(debugController.resume(
+                        strOrNull(body.get("configName")),
+                        strOrNull(body.get("sessionId")),
+                        strOrNull(body.get("launchId")),
+                        boolOrDefault(body.get("allowUiFallback"), false))));
                 return;
             }
             if ("POST".equals(method) && "/debug/suspend".equals(path)) {
                 if (!DangerGate.isOn()) { sendDangerOff(exchange); return; }
-                send(exchange, 200, ok(debugController.suspend()));
+                Map<?, ?> body = objectBody(exchange);
+                send(exchange, 200, ok(debugController.suspend(
+                        strOrNull(body.get("configName")),
+                        strOrNull(body.get("sessionId")),
+                        strOrNull(body.get("launchId")),
+                        boolOrDefault(body.get("allowUiFallback"), false))));
                 return;
             }
             if ("POST".equals(method) && "/debug/terminate".equals(path)) {
                 if (!DangerGate.isOn()) { sendDangerOff(exchange); return; }
-                send(exchange, 200, ok(debugController.terminate()));
+                Map<?, ?> body = objectBody(exchange);
+                send(exchange, 200, ok(debugController.terminate(
+                        strOrNull(body.get("configName")),
+                        strOrNull(body.get("sessionId")),
+                        strOrNull(body.get("launchId")),
+                        boolOrDefault(body.get("all"), false))));
                 return;
             }
             if ("POST".equals(method) && "/debug/restart".equals(path)) {
                 if (!DangerGate.isOn()) { sendDangerOff(exchange); return; }
-                send(exchange, 200, ok(debugController.restart()));
+                Map<?, ?> body = objectBody(exchange);
+                send(exchange, 200, ok(debugController.restart(
+                        strOrNull(body.get("configName")),
+                        strOrNull(body.get("sessionId")),
+                        strOrNull(body.get("launchId")))));
                 return;
             }
             if ("POST".equals(method) && "/debug/breakpoints".equals(path)) {
@@ -671,6 +740,26 @@ public final class Router {
         if (o == null) return null;
         String s = String.valueOf(o).trim();
         return s.isEmpty() ? null : s;
+    }
+
+    private boolean boolOrDefault(Object value, boolean defaultValue) {
+        if (value instanceof Boolean) return ((Boolean) value).booleanValue();
+        if (value != null) {
+            String text = String.valueOf(value).trim();
+            if ("true".equalsIgnoreCase(text)) return true;
+            if ("false".equalsIgnoreCase(text)) return false;
+        }
+        return defaultValue;
+    }
+
+    private Map<?, ?> objectBody(HttpExchange exchange) throws IOException {
+        String raw = readBody(exchange.getRequestBody());
+        if (raw == null || raw.trim().isEmpty()) return new LinkedHashMap<String, Object>();
+        Object parsed = Json.parse(raw);
+        if (!(parsed instanceof Map<?, ?>)) {
+            throw new IllegalArgumentException("JSON object body is required");
+        }
+        return (Map<?, ?>) parsed;
     }
 
     private void sendDangerOff(HttpExchange exchange) throws IOException {

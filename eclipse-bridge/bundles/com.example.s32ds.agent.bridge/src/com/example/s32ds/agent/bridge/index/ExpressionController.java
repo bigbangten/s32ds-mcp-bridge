@@ -1,5 +1,12 @@
 package com.example.s32ds.agent.bridge.index;
 
+import org.eclipse.cdt.dsf.concurrent.DataRequestMonitor;
+import org.eclipse.cdt.dsf.datamodel.DMContexts;
+import org.eclipse.cdt.dsf.debug.service.IExpressions;
+import org.eclipse.cdt.dsf.debug.service.IFormattedValues;
+import org.eclipse.cdt.dsf.debug.service.IStack;
+import org.eclipse.cdt.dsf.service.DsfServicesTracker;
+import org.eclipse.cdt.dsf.service.DsfSession;
 import org.eclipse.debug.core.DebugException;
 import org.eclipse.debug.core.DebugPlugin;
 import org.eclipse.debug.core.IExpressionManager;
@@ -18,6 +25,11 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+
+import org.osgi.framework.FrameworkUtil;
 
 /**
  * Phase 6: ad-hoc expression evaluation, watch-list management, and direct
@@ -41,18 +53,27 @@ public final class ExpressionController {
      * applies in the Router.
      */
     public Map<String, Object> evaluate(String expression, int frameIndex) {
-        Map<String, Object> out = new LinkedHashMap<>();
         if (expression == null || expression.isEmpty()) {
+            Map<String, Object> out = new LinkedHashMap<>();
             out.put("ok", false);
             out.put("error", "expression required");
             return out;
         }
         IStackFrame frame = pickFrame(frameIndex);
         if (frame == null) {
+            Map<String, Object> dsfResult = evaluateDsf(expression, frameIndex);
+            if (dsfResult != null) return dsfResult;
+            Map<String, Object> out = new LinkedHashMap<>();
             out.put("ok", false);
             out.put("error", "no suspended thread");
             return out;
         }
+        return evaluateAtFrame(expression, frame);
+    }
+
+    /** Evaluate against an already selected frame without consulting the UI. */
+    Map<String, Object> evaluateAtFrame(String expression, IStackFrame frame) {
+        Map<String, Object> out = new LinkedHashMap<>();
         IExpressionManager mgr = DebugPlugin.getDefault().getExpressionManager();
         IWatchExpression we = mgr.newWatchExpression(expression);
         we.setExpressionContext(frame);
@@ -247,5 +268,130 @@ public final class ExpressionController {
 
     private IStackFrame pickFrame(int frameIndex) {
         return DebugContextPicker.frame(frameIndex);
+    }
+
+    /**
+     * Evaluate through CDT DSF when PEmicro exposes no generic IStackFrame.
+     * General expression evaluation stays danger-gated by Router because the
+     * expression may contain assignments or target function calls.
+     */
+    private Map<String, Object> evaluateDsf(String expression, int frameIndex) {
+        DebugContextPicker.Selection selection = DebugContextPicker.suspended(frameIndex);
+        if (selection == null || selection.dmContext == null) return null;
+
+        DsfSession session = DsfSession.getSession(selection.dmContext.getSessionId());
+        if (session == null || !session.isActive()) return null;
+        org.osgi.framework.Bundle bundle = FrameworkUtil.getBundle(ExpressionController.class);
+        if (bundle == null || bundle.getBundleContext() == null) return null;
+
+        DsfServicesTracker tracker =
+                new DsfServicesTracker(bundle.getBundleContext(), session.getId());
+        try {
+            final IExpressions expressions = tracker.getService(IExpressions.class);
+            final IStack stack = tracker.getService(IStack.class);
+            if (expressions == null || stack == null) return null;
+
+            CountDownLatch latch = new CountDownLatch(1);
+            AtomicReference<Map<String, Object>> result = new AtomicReference<>();
+            AtomicReference<String> error = new AtomicReference<>();
+            final int requestedFrame = Math.max(0, frameIndex);
+
+            session.getExecutor().execute(new Runnable() {
+                @Override public void run() {
+                    IStack.IFrameDMContext frame = DMContexts.getAncestorOfType(
+                            selection.dmContext, IStack.IFrameDMContext.class);
+                    if (frame != null && frame.getLevel() == requestedFrame) {
+                        evaluateDsfAtFrame(expressions, session, frame, expression,
+                                selection, result, error, latch);
+                        return;
+                    }
+                    stack.getFrames(selection.dmContext, requestedFrame, requestedFrame,
+                            new DataRequestMonitor<IStack.IFrameDMContext[]>(
+                                    session.getExecutor(), null) {
+                        @Override protected void handleCompleted() {
+                            if (isSuccess() && getData() != null && getData().length > 0) {
+                                evaluateDsfAtFrame(expressions, session, getData()[0],
+                                        expression, selection, result, error, latch);
+                            } else {
+                                error.set(getStatus() != null
+                                        ? getStatus().getMessage()
+                                        : "no DSF stack frame");
+                                latch.countDown();
+                            }
+                        }
+                    });
+                }
+            });
+
+            if (!latch.await(EVAL_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                Map<String, Object> timedOut = new LinkedHashMap<>();
+                timedOut.put("ok", false);
+                timedOut.put("error", "DSF evaluation timed out after "
+                        + EVAL_TIMEOUT_MS + "ms");
+                return timedOut;
+            }
+            if (result.get() != null) return result.get();
+
+            Map<String, Object> failed = new LinkedHashMap<>();
+            failed.put("ok", false);
+            failed.put("error", error.get() != null ? error.get()
+                    : "DSF expression evaluation failed");
+            return failed;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            Map<String, Object> failed = new LinkedHashMap<>();
+            failed.put("ok", false);
+            failed.put("error", "DSF evaluation interrupted");
+            return failed;
+        } catch (Throwable t) {
+            Map<String, Object> failed = new LinkedHashMap<>();
+            failed.put("ok", false);
+            failed.put("error", t.getClass().getSimpleName() + ": " + t.getMessage());
+            return failed;
+        } finally {
+            tracker.dispose();
+        }
+    }
+
+    private void evaluateDsfAtFrame(IExpressions expressions, DsfSession session,
+                                    IStack.IFrameDMContext frame, String expression,
+                                    DebugContextPicker.Selection selection,
+                                    AtomicReference<Map<String, Object>> result,
+                                    AtomicReference<String> error,
+                                    CountDownLatch latch) {
+        try {
+            IExpressions.IExpressionDMContext expressionContext =
+                    expressions.createExpression(frame, expression);
+            IFormattedValues.FormattedValueDMContext formattedContext =
+                    expressions.getFormattedValueContext(expressionContext,
+                            IFormattedValues.NATURAL_FORMAT);
+            expressions.getFormattedExpressionValue(formattedContext,
+                    new DataRequestMonitor<IFormattedValues.FormattedValueDMData>(
+                            session.getExecutor(), null) {
+                @Override protected void handleCompleted() {
+                    try {
+                        if (isSuccess() && getData() != null) {
+                            Map<String, Object> out = new LinkedHashMap<>();
+                            out.put("ok", true);
+                            out.put("expression", expression);
+                            out.put("value", getData().getFormattedValue());
+                            out.put("frameLevel", frame.getLevel());
+                            out.put("debugContextSource", selection.source);
+                            out.put("source", "dsfExpressions");
+                            result.set(out);
+                        } else {
+                            error.set(getStatus() != null
+                                    ? getStatus().getMessage()
+                                    : "DSF expression returned no value");
+                        }
+                    } finally {
+                        latch.countDown();
+                    }
+                }
+            });
+        } catch (Throwable t) {
+            error.set(t.getClass().getSimpleName() + ": " + t.getMessage());
+            latch.countDown();
+        }
     }
 }

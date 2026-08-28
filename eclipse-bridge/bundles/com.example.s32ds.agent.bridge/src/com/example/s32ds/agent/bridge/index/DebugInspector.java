@@ -45,6 +45,8 @@ public final class DebugInspector {
         ILaunchManager mgr = DebugPlugin.getDefault().getLaunchManager();
         for (ILaunch launch : mgr.getLaunches()) {
             Map<String, Object> row = new LinkedHashMap<>();
+            row.put("launchId", DebugSessionSelector.launchId(launch));
+            row.put("sessionId", DebugSessionSelector.sessionIdForLaunch(launch));
             row.put("mode", launch.getLaunchMode());
             row.put("terminated", launch.isTerminated());
             try {
@@ -53,6 +55,8 @@ public final class DebugInspector {
             } catch (Throwable ignored) {
                 row.put("configName", null);
             }
+            Boolean dsfSuspended = DebugSessionSelector.suspendedState(launch);
+            if (dsfSuspended != null) row.put("dsfSuspended", dsfSuspended);
             List<Map<String, Object>> targets = new ArrayList<>();
             for (IDebugTarget t : launch.getDebugTargets()) {
                 Map<String, Object> tr = new LinkedHashMap<>();
@@ -115,7 +119,11 @@ public final class DebugInspector {
         result.put("variables", vars);
         return result;
     }
-    /** Lightweight status: is anything being debugged? anything halted? */
+    /**
+     * Lightweight status built only from launches and DSF services.
+     * This intentionally avoids SWT/DebugUITools so it remains usable when a
+     * workbench view is slow or wedged.
+     */
     public Map<String, Object> status() {
         Map<String, Object> out = new LinkedHashMap<>();
         ILaunchManager mgr = DebugPlugin.getDefault().getLaunchManager();
@@ -127,6 +135,9 @@ public final class DebugInspector {
             if (term) { terminated++; continue; }
             live++;
             Map<String, Object> row = new LinkedHashMap<>();
+            row.put("launchId", DebugSessionSelector.launchId(launch));
+            String sessionId = DebugSessionSelector.sessionIdForLaunch(launch);
+            row.put("sessionId", sessionId);
             try {
                 row.put("configName", launch.getLaunchConfiguration() != null
                         ? launch.getLaunchConfiguration().getName() : null);
@@ -136,30 +147,15 @@ public final class DebugInspector {
             for (IDebugTarget t : launch.getDebugTargets()) {
                 try { if (t.isSuspended()) { anyHalted = true; break; } } catch (Throwable ignored) {}
             }
+            Boolean dsfSuspended = DebugSessionSelector.suspendedState(launch);
+            if (dsfSuspended != null) {
+                anyHalted = dsfSuspended.booleanValue();
+                row.put("dsfSuspended", dsfSuspended);
+                row.put("source", "dsfSession");
+            }
             row.put("halted", anyHalted);
             if (anyHalted) halted++; else running++;
             summary.add(row);
-        }
-        DebugContextPicker.Selection activeStopped = DebugContextPicker.suspended(0);
-        Boolean dsfSuspended = DebugContextPicker.dsfSuspendedState(activeStopped);
-        boolean reliableActiveStop = activeStopped != null && (
-                activeStopped.frame != null
-                        || activeStopped.thread != null
-                        || activeStopped.target != null
-                        || Boolean.TRUE.equals(dsfSuspended));
-        if (reliableActiveStop && halted == 0) {
-            halted = 1;
-            if (running > 0) running--;
-            live = Math.max(live, 1);
-            Map<String, Object> active = new LinkedHashMap<>();
-            active.put("configName", null);
-            try { active.put("configName", activeStopped.launch != null && activeStopped.launch.getLaunchConfiguration() != null
-                    ? activeStopped.launch.getLaunchConfiguration().getName() : null); } catch (Throwable ignored) {}
-            active.put("mode", activeStopped.launch != null ? activeStopped.launch.getLaunchMode() : null);
-            active.put("halted", true);
-            active.put("source", activeStopped.source);
-            if (dsfSuspended != null) active.put("dsfSuspended", dsfSuspended);
-            summary.add(active);
         }
         out.put("anyLive", live > 0);
         out.put("anyHalted", halted > 0);

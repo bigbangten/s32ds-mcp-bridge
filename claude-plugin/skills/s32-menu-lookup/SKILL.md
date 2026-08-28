@@ -43,6 +43,20 @@ Never record bearer tokens, secrets, private user source code, speculative guess
 | "PEMicro 연결 로그" / "Console 내용" | `console_list` | `console_tail(name="PEMicro")` |
 | "파일 열어줘" | `open_file(path)` | |
 
+## Background and multi-target debug protocol (bridge 0.4.3+)
+
+Use this protocol whenever one or more boards are connected:
+
+1. Call `health` first. Treat `uiResponsive` and `dsfResponsive` separately; an HTTP response alone does not prove that SWT or the debugger executor is healthy.
+2. Call `debug_status` or `debug_sessions` and retain the returned `launchId` and `sessionId`. If two or more live debug launches exist, pass one of those IDs to every selected run-control or snapshot call. Never let board order choose the target.
+3. Before suspending PEmicro while NXP SVD/register views are open, call `get_state`, then `hide_view(viewId)` for each open NXP SVD view. `hide_view` is idempotent and does not activate the view or take OS foreground focus.
+4. Use `debug_suspend(..., allow_ui_fallback=false)` and `debug_resume(..., allow_ui_fallback=false)` by default. UI fallback is opt-in only, because activating Debug/SVD views can deadlock the SWT thread on some S32DS/PEmicro combinations.
+5. For SQI, MSE, counters, or other plain globals/array fields, prefer one `debug_snapshot(expressions=[...], session_id=...)` call after suspension. It reads fresh DSF values from the same stop and does not create persistent Expressions-view watches. Its safe grammar permits identifiers, `.field`, and numeric `[index]` only.
+6. If a selector matches multiple launches, the bridge intentionally fails closed. Re-read `debug_status` and select by `launchId` or `sessionId`; do not retry without a selector.
+7. Do not use screenshots, `SetWindowPos`, keyboard shortcuts, or external foreground automation for run control or view hiding when these MCP operations are available.
+
+`debug_snapshot` is read-only and does not require danger mode. Suspend, resume, terminate, and restart still require the danger gate and an explicit user request in the current turn.
+
 ## Mandatory protocol — DO NOT SKIP
 
 ### For any UI-path question (menu/view/command):
@@ -91,6 +105,10 @@ Nature determines which CDT menus apply.
 4. **Giving a path for a command that's `enabledNow:false`.** Tell the user what selection/condition is required to enable it.
 
 5. **Suggesting "just hit flash" without `analyze_launch_config` first.** The binary might not exist, the project might be closed, the device might not match. One 50ms tool call prevents real damage.
+
+6. **Controlling the first debug session in a two-board setup.** Session enumeration order is not board identity. Use `launchId` or `sessionId`, and stop if selection is ambiguous.
+
+7. **Bringing S32DS to the foreground to close SVD views or press Suspend.** Use `hide_view` and background DSF run control. Foreground automation interrupts the user and can re-trigger the problematic view.
 
 ## Common S32DS IDs (reference — always verify via tools first)
 

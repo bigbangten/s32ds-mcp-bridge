@@ -249,7 +249,7 @@ final class DebugContextPicker {
         return new Selection(launch != null ? launch : target.getLaunch(), target, null, null, null, null, source + ":target");
     }
 
-    private static boolean isStopped(Selection s) {
+    static boolean isStopped(Selection s) {
         if (s == null || isTerminated(s)) return false;
         Boolean dsfSuspended = dsfSuspended(s.dmContext);
         if (dsfSuspended != null) return dsfSuspended.booleanValue();
@@ -259,7 +259,7 @@ final class DebugContextPicker {
         return safeSuspended(s.suspendResume);
     }
 
-    private static boolean canSuspend(Selection s) {
+    static boolean canSuspend(Selection s) {
         if (s == null || isTerminated(s)) return false;
         try { if (s.thread != null && s.thread.canSuspend()) return true; } catch (Throwable ignored) {}
         try { if (s.target != null && s.target.canSuspend()) return true; } catch (Throwable ignored) {}

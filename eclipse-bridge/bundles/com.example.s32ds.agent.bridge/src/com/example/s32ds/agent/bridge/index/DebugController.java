@@ -14,9 +14,7 @@ import org.eclipse.cdt.dsf.debug.service.IRunControl;
 import org.eclipse.cdt.dsf.service.DsfServicesTracker;
 import org.eclipse.cdt.dsf.service.DsfSession;
 import org.eclipse.debug.core.DebugException;
-import org.eclipse.debug.core.DebugPlugin;
 import org.eclipse.debug.core.ILaunch;
-import org.eclipse.debug.core.ILaunchManager;
 import org.eclipse.debug.core.model.IDebugTarget;
 import org.eclipse.debug.core.model.IRegister;
 import org.eclipse.debug.core.model.IRegisterGroup;
@@ -79,55 +77,147 @@ public final class DebugController {
         return out;
     }
     public Map<String, Object> resume() {
+        return resume(null, null, null, true);
+    }
+
+    public Map<String, Object> resume(String configName, String sessionId,
+                                      String launchId, boolean allowUiFallback) {
         Map<String, Object> out = new LinkedHashMap<>();
-        DebugContextPicker.Selection sel = DebugContextPicker.suspended(0);
-        if (tryResume(sel != null ? sel.frame : null, out, "frame")) return out;
-        if (tryResume(sel != null ? sel.thread : null, out, "thread")) return out;
-        if (tryResume(sel != null ? sel.target : null, out, "target")) return out;
-        if (tryDsfResume(sel, out)) return out;
-        if (executeUiCommand("org.eclipse.debug.ui.commands.Resume", out)) return out;
-        if (tryResumeUnchecked(sel != null ? sel.suspendResume : null, out, "suspendResume")) return out;
+        DebugSessionSelector.Selector selector =
+                new DebugSessionSelector.Selector(configName, sessionId, launchId);
+        DebugContextPicker.Selection sel = DebugSessionSelector.select(selector, 0, true);
+        String selectionProblem = DebugSessionSelector.selectionProblem(selector);
+        if (selectionProblem != null) {
+            out.put("ok", false);
+            out.put("error", selectionProblem);
+            return out;
+        }
+        if (tryDsfResume(sel, out)) {
+            DebugSessionSelector.annotate(out, sel);
+            return out;
+        }
+        if (tryResume(sel != null ? sel.frame : null, out, "frame")
+                || tryResume(sel != null ? sel.thread : null, out, "thread")
+                || tryResume(sel != null ? sel.target : null, out, "target")
+                || tryResumeUnchecked(sel != null ? sel.suspendResume : null,
+                        out, "suspendResume")) {
+            DebugSessionSelector.annotate(out, sel);
+            return out;
+        }
+        if (allowUiFallback
+                && executeUiCommand("org.eclipse.debug.ui.commands.Resume", out)) {
+            DebugSessionSelector.annotate(out, sel);
+            return out;
+        }
         out.put("ok", false);
-        if (!out.containsKey("error")) out.put("error", "no resumable debug context");
-        if (sel != null) out.put("debugContextSource", sel.source);
+        if (!out.containsKey("error")) {
+            out.put("error", allowUiFallback
+                    ? "no resumable debug context"
+                    : "no background-resumable debug context; UI fallback was disabled");
+        }
+        DebugSessionSelector.annotate(out, sel);
         return out;
     }
     public Map<String, Object> suspend() {
+        return suspend(null, null, null, true);
+    }
+
+    public Map<String, Object> suspend(String configName, String sessionId,
+                                       String launchId, boolean allowUiFallback) {
         Map<String, Object> out = new LinkedHashMap<>();
-        DebugContextPicker.Selection sel = DebugContextPicker.running();
-        if (trySuspend(sel != null ? sel.thread : null, out, "thread")) return out;
-        if (trySuspend(sel != null ? sel.target : null, out, "target")) return out;
-        if (trySuspend(sel != null ? sel.suspendResume : null, out, "suspendResume")) return out;
-        if (executeUiCommand("org.eclipse.debug.ui.commands.Suspend", out)) return out;
+        DebugSessionSelector.Selector selector =
+                new DebugSessionSelector.Selector(configName, sessionId, launchId);
+        DebugContextPicker.Selection sel = DebugSessionSelector.select(selector, 0, false);
+        String selectionProblem = DebugSessionSelector.selectionProblem(selector);
+        if (selectionProblem != null) {
+            out.put("ok", false);
+            out.put("error", selectionProblem);
+            return out;
+        }
+        if (tryDsfSuspend(sel, out)) {
+            DebugSessionSelector.annotate(out, sel);
+            return out;
+        }
+        if (trySuspend(sel != null ? sel.thread : null, out, "thread")
+                || trySuspend(sel != null ? sel.target : null, out, "target")
+                || trySuspend(sel != null ? sel.suspendResume : null,
+                        out, "suspendResume")) {
+            DebugSessionSelector.annotate(out, sel);
+            return out;
+        }
+        if (allowUiFallback
+                && executeUiCommand("org.eclipse.debug.ui.commands.Suspend", out)) {
+            DebugSessionSelector.annotate(out, sel);
+            return out;
+        }
         out.put("ok", false);
-        if (!out.containsKey("error")) out.put("error", "no suspendable debug context");
-        if (sel != null) out.put("debugContextSource", sel.source);
+        if (!out.containsKey("error")) {
+            out.put("error", allowUiFallback
+                    ? "no suspendable debug context"
+                    : "no background-suspendable debug context; UI fallback was disabled");
+        }
+        DebugSessionSelector.annotate(out, sel);
         return out;
     }
     public Map<String, Object> terminate() {
+        return terminate(null, null, null, true);
+    }
+
+    public Map<String, Object> terminate(String configName, String sessionId,
+                                         String launchId, boolean all) {
         Map<String, Object> out = new LinkedHashMap<>();
-        ILaunchManager mgr = DebugPlugin.getDefault().getLaunchManager();
+        DebugSessionSelector.Selector selector =
+                new DebugSessionSelector.Selector(configName, sessionId, launchId);
+        if (selector.isEmpty() && !all) {
+            out.put("ok", false);
+            out.put("error", "configName, sessionId, or launchId is required when all=false");
+            return out;
+        }
+        java.util.List<ILaunch> matches = DebugSessionSelector.matchingLaunches(selector);
+        if (!selector.isEmpty() && matches.size() != 1) {
+            out.put("ok", false);
+            out.put("error", DebugSessionSelector.selectionProblem(selector));
+            return out;
+        }
         int killed = 0;
-        for (ILaunch launch : mgr.getLaunches()) {
-            if (launch.isTerminated()) continue;
+        java.util.List<Map<String, Object>> terminated = new java.util.ArrayList<>();
+        for (ILaunch launch : matches) {
             try {
-                if (launch.canTerminate()) { launch.terminate(); killed++; }
+                if (launch.canTerminate()) {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("launchId", DebugSessionSelector.launchId(launch));
+                    row.put("configName", DebugSessionSelector.configName(launch));
+                    row.put("sessionId", DebugSessionSelector.sessionIdForLaunch(launch));
+                    launch.terminate();
+                    terminated.add(row);
+                    killed++;
+                    if (!selector.isEmpty()) break;
+                }
             } catch (DebugException ignored) {}
         }
         out.put("ok", killed > 0);
         out.put("terminatedLaunches", killed);
+        out.put("terminated", terminated);
         if (killed == 0) out.put("error", "no live launch to terminate");
         return out;
     }
 
     public Map<String, Object> restart() {
+        return restart(null, null, null);
+    }
+
+    public Map<String, Object> restart(String configName, String sessionId,
+                                       String launchId) {
         Map<String, Object> out = new LinkedHashMap<>();
-        ILaunchManager mgr = DebugPlugin.getDefault().getLaunchManager();
-        ILaunch toRestart = null;
-        for (ILaunch launch : mgr.getLaunches()) {
-            if (!launch.isTerminated()) { toRestart = launch; break; }
+        DebugSessionSelector.Selector selector =
+                new DebugSessionSelector.Selector(configName, sessionId, launchId);
+        ILaunch toRestart = DebugSessionSelector.findLaunch(selector);
+        if (toRestart == null) {
+            out.put("ok", false);
+            String problem = DebugSessionSelector.selectionProblem(selector);
+            out.put("error", problem != null ? problem : "no live launch to restart");
+            return out;
         }
-        if (toRestart == null) { out.put("ok", false); out.put("error", "no live launch to restart"); return out; }
         try {
             String mode = toRestart.getLaunchMode();
             org.eclipse.debug.core.ILaunchConfiguration config = toRestart.getLaunchConfiguration();
@@ -139,6 +229,9 @@ public final class DebugController {
             out.put("ok", true);
             out.put("configName", config.getName());
             out.put("mode", fresh.getLaunchMode());
+            out.put("launchId", DebugSessionSelector.launchId(fresh));
+            String freshSessionId = DebugSessionSelector.sessionIdForLaunch(fresh);
+            if (freshSessionId != null) out.put("sessionId", freshSessionId);
             return out;
         } catch (Exception e) {
             out.put("ok", false); out.put("error", e.getMessage()); return out;
@@ -472,6 +565,69 @@ public final class DebugController {
             return true;
         } catch (Throwable t) {
             out.put("dsfResumeError", t.getClass().getSimpleName() + ": " + t.getMessage());
+            return false;
+        } finally {
+            tracker.dispose();
+        }
+    }
+
+    /** Suspend directly through the selected DSF session without activating a view. */
+    private boolean tryDsfSuspend(DebugContextPicker.Selection sel, Map<String, Object> out) {
+        if (sel == null || sel.dmContext == null) return false;
+        IRunControl.IExecutionDMContext exec =
+                DMContexts.getAncestorOfType(sel.dmContext,
+                        IRunControl.IExecutionDMContext.class);
+        if (exec == null) return false;
+        DsfSession session = DsfSession.getSession(exec.getSessionId());
+        if (session == null || !session.isActive()) {
+            out.put("dsfSuspendError", "DSF session is not active: " + exec.getSessionId());
+            return false;
+        }
+        org.osgi.framework.Bundle bundle = FrameworkUtil.getBundle(DebugController.class);
+        if (bundle == null || bundle.getBundleContext() == null) {
+            out.put("dsfSuspendError", "bridge bundle context unavailable");
+            return false;
+        }
+        DsfServicesTracker tracker = new DsfServicesTracker(bundle.getBundleContext(), session.getId());
+        try {
+            final IRunControl runControl = tracker.getService(IRunControl.class);
+            if (runControl == null) {
+                out.put("dsfSuspendError", "IRunControl service unavailable");
+                return false;
+            }
+            CountDownLatch latch = new CountDownLatch(1);
+            AtomicReference<IStatus> status = new AtomicReference<>();
+            session.getExecutor().execute(new Runnable() {
+                @Override public void run() {
+                    runControl.suspend(exec, new RequestMonitor(session.getExecutor(), null) {
+                        @Override protected void handleCompleted() {
+                            status.set(getStatus());
+                            latch.countDown();
+                        }
+                    });
+                }
+            });
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                out.put("dsfSuspendError", "IRunControl.suspend timed out");
+                return false;
+            }
+            IStatus st = status.get();
+            if (st != null && !st.isOK()) {
+                out.put("dsfSuspendError", st.getMessage());
+                return false;
+            }
+            Boolean suspended = dsfSuspended(session, runControl, exec);
+            if (Boolean.FALSE.equals(suspended)) {
+                out.put("dsfSuspendPostState", "stillRunning");
+                return false;
+            }
+            out.put("ok", true);
+            out.put("source", "dsfRunControl");
+            out.put("sessionId", session.getId());
+            if (suspended != null) out.put("dsfSuspendedAfterSuspend", suspended);
+            return true;
+        } catch (Throwable t) {
+            out.put("dsfSuspendError", t.getClass().getSimpleName() + ": " + t.getMessage());
             return false;
         } finally {
             tracker.dispose();

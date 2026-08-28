@@ -75,3 +75,27 @@ Failed: Starting eclipse\s32ds.exe from an arbitrary PowerShell/Codex working di
 Worked: Start C:\NXP\S32DS.3.5\eclipse\s32ds.exe with -WorkingDirectory C:\NXP\S32DS.3.5 and pass -vm C:\NXP\S32DS.3.5\jre\bin\javaw.exe plus -clean -data %USERPROFILE%\workspaceS32DS.3.5.
 Verify: After restart, query /health and /dialogs/open, then inspect the new .metadata\.log session; it should show the new command line and no fresh NoClassDefFoundError: javafx/beans/property/SimpleBooleanProperty entries after the session header.
 Caution: Do not classify these Peripherals/Dashboard NPE dialogs as a bridge bundle install bug just because bridge saveAll appears in one stack; first check the root cause and launch working directory. Avoid editing s32ds.ini unless the correct launch command still reproduces the JavaFX error.
+
+## 2026-08-06 - Read PEmicro semihost output through the telnet Process Console
+Tags: pemicro,semihosting,console,dsf,sja1110
+Context: A PEmicro CDT/DSF session was running and halted locations were visible, but generic debug_evaluate and debug_memory could not find a suspended Eclipse thread or target.
+Failed: Sending semihost output to the GDB Client Console placed it in the Debugger Console view, which console_list and console_tail did not expose.
+Worked: Enable PEmicro semihosting, set enableSemihostingIoclientGdbClient=false, enableSemihostingIoclientTelnet=true, and doGdbServerAllocateSemihostingConsole=true. Provide a guarded ARM semihosting _write backend using BKPT 0xAB. After resume, console_list exposes two same-named Process Consoles; inspect both and use console_tail on the one containing application output.
+Verify: debug_status reports the target running and console_tail returns the target application diagnostic lines repeatedly.
+Caution: Compile the _write backend only behind an explicit validation define; an unguarded backend can execute BKPT when ordinary firmware prints. PEmicro may also reject a second simultaneous services launch, so avoid assuming two live sessions are supported.
+
+## 2026-08-18 - Avoid NXP SVD view deadlock during background PEmicro suspend
+Tags: s32ds,svd,dsf,suspend,background,pemicro,perspective
+Context: With NXP Peripheral Registers and Arm System Registers views open in the Debug perspective, a PEmicro suspend caused the S32DS SWT main thread to wait inside SvdRegistersViewBase.getThreadId via DSF Query.get, freezing the workbench and forcing foreground UI recovery attempts.
+Failed: Keeping the Debug perspective and trying to close SVD tabs through external screen automation required foreground focus and interfered with the user desktop; bridge 0.4.2 exposed show_view but no hide_view.
+Worked: With no live debug launch, switch to org.eclipse.cdt.ui.CPerspective through the bridge, verify no com.nxp.s32ds.cdt.svd views are open, then launch and suspend through MCP. Bridge 0.4.3 adds idempotent hide_view plus background DSF suspend/resume so this safeguard no longer needs OS foreground automation.
+Verify: In the original recovery run, debug_suspend returned ok, debug_status reported a DSF-suspended target, debug_evaluate read live counters, and get_state remained in C/C++ with zero open SVD views. After installing 0.4.3, a separate MCP session verified bounded health, idempotent hide_view, UI-independent debug_status, and safe-path rejection in debug_snapshot; direct DSF suspend/resume still needs the next live-target run.
+Caution: Do not bring S32DS to the foreground or use repeated SetWindowPos. Keep allow_ui_fallback=false; if an SVD view cannot be hidden through MCP, stop before suspend and report the bridge/UI health state.
+
+## 2026-08-18 - Prefer the plugin-bundled MCP package over stale user-site installs
+Tags: mcp,bootstrap,plugin,python,version,cache
+Context: After installing S32DS MCP plugin 0.4.3, an older editable or user-site s32ds_mcp_server could still satisfy the bootstrap import and hide newly bundled tools.
+Failed: Importing s32ds_mcp_server before locating the plugin's mcp-server directory returned early whenever any older package was importable, so updating the plugin files alone did not guarantee the running MCP schema.
+Worked: Resolve the plugin-local mcp-server directory first, prepend its src directory to sys.path, and only fall back to a manually installed package when bundled source is unavailable or incomplete.
+Verify: Start a separate stdio MCP client from the installed 0.4.3 bootstrap, initialize it, list tools, and confirm health, hide_view, debug_status, and debug_snapshot are present and callable against bridge 0.4.3.
+Caution: A Codex thread keeps its original MCP tool schema; verify the new package in a fresh thread or a separate stdio client rather than assuming an in-place cache update hot-reloads tools.

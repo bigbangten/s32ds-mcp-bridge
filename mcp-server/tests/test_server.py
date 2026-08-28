@@ -102,6 +102,104 @@ class ServerFetchTests(unittest.IsolatedAsyncioTestCase):
         payload = await server.fetch_visible_menu("menu:org.eclipse.ui.main.menu")
         self.assertTrue(payload["ok"])
 
+    async def test_hide_view_posts_optional_secondary_id(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(request.method, "POST")
+            self.assertEqual(request.url.path, "/hide-view")
+            self.assertEqual(
+                json.loads(request.content),
+                {"viewId": "example.view", "secondaryId": "2"},
+            )
+            return httpx.Response(200, json={"ok": True, "data": {"hidden": True}})
+
+        server.bridge_client = BridgeClient(
+            BridgeSettings(base_url="http://127.0.0.1:39231", token="abc"),
+            transport=_mock_transport(handler),
+        )
+
+        payload = await server.post_hide_view("example.view", "2")
+        self.assertTrue(payload["data"]["hidden"])
+
+    async def test_debug_snapshot_posts_selector_and_paths(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(request.method, "POST")
+            self.assertEqual(request.url.path, "/debug/snapshot")
+            body = json.loads(request.content)
+            self.assertEqual(body["expressions"], ["counter", "ports[0].quality"])
+            self.assertEqual(body["configName"], "generation")
+            self.assertEqual(body["frame"], 0)
+            self.assertEqual(body["format"], "natural")
+            return httpx.Response(200, json={"ok": True, "data": {"successCount": 2}})
+
+        server.bridge_client = BridgeClient(
+            BridgeSettings(base_url="http://127.0.0.1:39231", token="abc"),
+            transport=_mock_transport(handler),
+        )
+
+        payload = await server.fetch_debug_snapshot(
+            ["counter", "ports[0].quality"], config_name="generation"
+        )
+        self.assertEqual(payload["data"]["successCount"], 2)
+
+    async def test_debug_suspend_posts_target_without_ui_fallback(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(request.method, "POST")
+            self.assertEqual(request.url.path, "/debug/suspend")
+            self.assertEqual(
+                json.loads(request.content),
+                {"sessionId": "5", "allowUiFallback": False},
+            )
+            return httpx.Response(200, json={"ok": True, "data": {"sessionId": "5"}})
+
+        server.bridge_client = BridgeClient(
+            BridgeSettings(base_url="http://127.0.0.1:39231", token="abc"),
+            transport=_mock_transport(handler),
+        )
+
+        payload = await server.call_debug_suspend(session_id="5")
+        self.assertEqual(payload["data"]["sessionId"], "5")
+
+    async def test_debug_resume_ui_fallback_is_explicit(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(request.method, "POST")
+            self.assertEqual(request.url.path, "/debug/resume")
+            self.assertEqual(
+                json.loads(request.content),
+                {"launchId": "abc", "allowUiFallback": True},
+            )
+            return httpx.Response(200, json={"ok": True, "data": {"launchId": "abc"}})
+
+        server.bridge_client = BridgeClient(
+            BridgeSettings(base_url="http://127.0.0.1:39231", token="abc"),
+            transport=_mock_transport(handler),
+        )
+
+        payload = await server.call_debug_resume(
+            launch_id="abc", allow_ui_fallback=True
+        )
+        self.assertEqual(payload["data"]["launchId"], "abc")
+
+    async def test_debug_terminate_can_target_one_launch(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(request.method, "POST")
+            self.assertEqual(request.url.path, "/debug/terminate")
+            self.assertEqual(
+                json.loads(request.content),
+                {"sessionId": "5", "all": False},
+            )
+            return httpx.Response(
+                200,
+                json={"ok": True, "data": {"terminatedLaunches": 1}},
+            )
+
+        server.bridge_client = BridgeClient(
+            BridgeSettings(base_url="http://127.0.0.1:39231", token="abc"),
+            transport=_mock_transport(handler),
+        )
+
+        payload = await server.call_debug_terminate(session_id="5")
+        self.assertEqual(payload["data"]["terminatedLaunches"], 1)
+
     async def test_danger_off_error_surfaces(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
             self.assertEqual(request.method, "POST")
@@ -165,6 +263,7 @@ class ServerRegistrationTests(unittest.TestCase):
             "list_problems",
             # Phase 2 ??safe writes
             "show_view",
+            "hide_view",
             "switch_perspective",
             "open_file",
             "save_all",
@@ -181,6 +280,7 @@ class ServerRegistrationTests(unittest.TestCase):
             "debug_sessions",
             "debug_stackframes",
             "debug_variables",
+            "debug_snapshot",
             "debug_breakpoints",
             "dialogs_open",
             "dialog_widgets",

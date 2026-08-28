@@ -42,7 +42,7 @@ S32 Design Studio 3.5.x
 ### Codex
 
 ```bash
-codex plugin marketplace add bigbangten/s32ds-mcp-bridge --ref v0.4.2
+codex plugin marketplace add bigbangten/s32ds-mcp-bridge --ref v0.4.3
 codex plugin add s32@s32ds-mcp-bridge
 ```
 
@@ -85,7 +85,8 @@ eclipse-bridge/releng/com.example.s32ds.agent.repository/target/
 
 Core workbench:
 - Health, active perspective/editor/selection, open editors, Problems view, views, perspectives, commands, menus, legacy actions, dialogs, wizards, and console output.
-- Open views, switch perspectives, open files, save all, and build projects.
+- Open or hide views, switch perspectives, open files, save all, and build projects.
+- Health remains responsive when the SWT event loop is wedged and reports separate UI and DSF responsiveness probes.
 
 S32DS environment:
 - Installed NXP bundles, Config Tools, debuggers, toolchains, launch configs, and launch attributes.
@@ -93,8 +94,10 @@ S32DS environment:
 Guarded debug and launch:
 - Analyze launch configs before running.
 - Run launch configs and run temporary launch copies with in-memory attribute overrides.
-- DSF-aware debug status, location, stack frames, variables, registers, memory, breakpoints, and console reads.
-- Danger-gated resume, step, suspend, terminate, restart, breakpoint set/clear, memory/register writes, expression evaluation, watch expressions, variable writes, run-to-line, and jump-to-line.
+- DSF-aware debug status with stable `launchId`/`sessionId`, location, stack frames, variables, registers, memory, breakpoints, and console reads.
+- Fresh read-only batch snapshots for safe variable paths, evaluated on one selected suspended target without activating the Expressions or Debug view.
+- Danger-gated background resume/suspend with explicit target selection and opt-in UI fallback, plus selected terminate/restart, step, breakpoint set/clear, memory/register writes, expression evaluation, watch expressions, variable writes, run-to-line, and jump-to-line.
+- Multi-target operations refuse an ambiguous selector instead of silently controlling the first connected board.
 
 Self-improving skill:
 - `s32-menu-lookup` checks learned recipes before inventing workarounds.

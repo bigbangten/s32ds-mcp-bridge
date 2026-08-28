@@ -5,6 +5,7 @@ import org.eclipse.ui.IPerspectiveDescriptor;
 import org.eclipse.ui.IWorkbench;
 import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.IWorkbenchWindow;
+import org.eclipse.ui.IViewReference;
 import org.eclipse.ui.PartInitException;
 import org.eclipse.ui.PlatformUI;
 
@@ -32,6 +33,49 @@ public final class WorkbenchController {
             r.put("viewId", viewId);
             r.put("status", "shown");
             return r;
+        });
+    }
+
+    /**
+     * Hide a view without activating it or changing the OS foreground window.
+     * The operation is idempotent so automation can safely use it as a
+     * pre-debug guard for known-problematic views.
+     */
+    public Map<String, Object> hideView(String viewId, String secondaryId) {
+        return UiThread.sync(() -> {
+            IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
+            if (window == null) {
+                return fail("No active workbench window");
+            }
+            IWorkbenchPage page = window.getActivePage();
+            if (page == null) {
+                return fail("No active workbench page");
+            }
+
+            IViewReference match = null;
+            for (IViewReference reference : page.getViewReferences()) {
+                if (!viewId.equals(reference.getId())) continue;
+                String existingSecondary = reference.getSecondaryId();
+                if (secondaryId == null || secondaryId.isEmpty()
+                        || secondaryId.equals(existingSecondary)) {
+                    match = reference;
+                    break;
+                }
+            }
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("viewId", viewId);
+            result.put("secondaryId", secondaryId);
+            if (match == null) {
+                result.put("status", "alreadyHidden");
+                result.put("hidden", Boolean.FALSE);
+                return result;
+            }
+
+            page.hideView(match);
+            result.put("status", "hidden");
+            result.put("hidden", Boolean.TRUE);
+            return result;
         });
     }
 
