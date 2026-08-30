@@ -69,13 +69,12 @@ Verify: With the SJA1110 flash launch active, `/debug/status` may report `source
 Caution: A halted DSF state after Resume is not necessarily a failed resume; it may be a newly hit breakpoint. Check `/debug/location` before changing run-control code again.
 
 ## 2026-05-26 - Launch S32DS with install root working directory so JavaFX config tools load
-Tags: launch,javafx,s32ds,configuration-tools,peripherals,working-directory
-Context: Opening Peripherals/Dashboard after S32DS was started externally produced Problem Occurred dialogs for Dashboard UI refresh and Updating status of the generated files, with NXP Configuration Tools throwing NoClassDefFoundError for javafx/beans/property/SimpleBooleanProperty.
-Failed: Starting eclipse\s32ds.exe from an arbitrary PowerShell/Codex working directory without -WorkingDirectory made the relative s32ds.ini property -Defxclipse.java-modules.dir=jre/javafx-sdk-11.0.2/lib resolve incorrectly; bridge Save All could trigger the broken generated-files refresh, making the stack mention EditorController even though the root classpath problem was NXP JavaFX loading.
-Worked: Start C:\NXP\S32DS.3.5\eclipse\s32ds.exe with -WorkingDirectory C:\NXP\S32DS.3.5 and pass -vm C:\NXP\S32DS.3.5\jre\bin\javaw.exe plus -clean -data %USERPROFILE%\workspaceS32DS.3.5.
-Verify: After restart, query /health and /dialogs/open, then inspect the new .metadata\.log session; it should show the new command line and no fresh NoClassDefFoundError: javafx/beans/property/SimpleBooleanProperty entries after the session header.
-Caution: Do not classify these Peripherals/Dashboard NPE dialogs as a bridge bundle install bug just because bridge saveAll appears in one stack; first check the root cause and launch working directory. Avoid editing s32ds.ini unless the correct launch command still reproduces the JavaFX error.
-
+Tags: launch,javafx,s32ds,configuration-tools,peripherals,working-directory,workspace-launcher,headless
+Context: Starting S32DS after a bridge install must refresh OSGi without pausing for Workspace Launcher or breaking NXP Configuration Tools relative JavaFX paths.
+Failed: Starting s32ds.exe with only -clean stopped at the Workspace Launcher and still required a screen click. Starting from the eclipse subdirectory or an arbitrary working directory can also make the relative fxclipse Java modules path resolve incorrectly.
+Worked: Start C:\NXP\S32DS.3.5\eclipse\s32ds.exe with working directory C:\NXP\S32DS.3.5 and arguments -vm C:\NXP\S32DS.3.5\jre\bin\javaw.exe -clean -data %USERPROFILE%\workspaceS32DS.3.5. The explicit workspace bypasses the launcher without computer-use.
+Verify: Confirm the discovery bridge pid belongs to the resulting javaw process, /health reports bridge 0.4.3 with workbenchRunning, uiResponsive, and dsfResponsive true, and /dialogs/open contains the main workbench rather than Workspace Launcher.
+Caution: The native s32ds launcher process and the javaw workbench can have different pids when -vm is explicit; trust the discovery pid and authenticated health endpoint. Do not classify unrelated workspace project marker errors as bridge-load failures.
 ## 2026-08-06 - Read PEmicro semihost output through the telnet Process Console
 Tags: pemicro,semihosting,console,dsf,sja1110
 Context: A PEmicro CDT/DSF session was running and halted locations were visible, but generic debug_evaluate and debug_memory could not find a suspended Eclipse thread or target.
