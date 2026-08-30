@@ -23,7 +23,7 @@ Important components:
 Workbench and environment helpers:
 
 - `StateInspector`, `CommandIndexer`, `ExtensionRegistryIndexer`, `MenuMaterializer`
-- `ViewIndexer`, `PerspectiveIndexer`, `WizardIndexer`
+- `ViewIndexer`, `PerspectiveIndexer`, `WizardIndexer`, `DialogInspector`, `DialogController`
 - `S32dsInventory`, launch config and console helpers
 
 Debug helpers:
@@ -36,6 +36,8 @@ The debug path is CDT/DSF-aware because S32DS/PEmicro sessions often expose acti
 `debug_status` and `debug_sessions` expose stable identifiers for each live launch. Targeted operations accept a launch configuration name, DSF session id, or launch id. If more than one live debug launch matches, the bridge fails closed and asks the caller to select one. Background resume/suspend uses DSF directly when available and does not activate a workbench view unless UI fallback is explicitly requested.
 
 `debug_snapshot` evaluates a bounded batch of validated C variable paths against one suspended frame. It creates fresh DSF expression contexts for every request and never adds persistent watches. `BridgeServer` health checks use bounded asynchronous SWT and DSF probes so a wedged workbench does not also wedge the HTTP health endpoint.
+
+`DialogInspector` returns short-lived child-index paths for widgets in an open SWT shell. Danger-gated dialog actions require the shell index plus its exact current title, and button actions additionally require the exact visible label. This lets agents handle modal Retry/Abort/OK/Save-and-Launch flows without desktop automation while failing closed if the dialog changed after inspection.
 
 ## Python MCP Server
 

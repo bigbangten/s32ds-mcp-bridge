@@ -241,6 +241,56 @@ class ServerFetchTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(payload["data"]["configName"], "cfg_copy")
 
+    async def test_dialog_click_button_posts_verified_target(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(request.method, "POST")
+            self.assertEqual(request.url.path, "/dialogs/action/click-button")
+            self.assertEqual(
+                json.loads(request.content),
+                {
+                    "index": 2,
+                    "expectedTitle": "PEmicro Connection Assistant",
+                    "widgetPath": "0.1.3",
+                    "expectedText": "Retry",
+                },
+            )
+            return httpx.Response(200, json={"ok": True, "data": {"clicked": True}})
+
+        server.bridge_client = BridgeClient(
+            BridgeSettings(base_url="http://127.0.0.1:39231", token="abc"),
+            transport=_mock_transport(handler),
+        )
+
+        payload = await server.call_dialog_click_button(
+            2, "PEmicro Connection Assistant", "0.1.3", "Retry"
+        )
+        self.assertTrue(payload["data"]["clicked"])
+
+    async def test_dialog_set_value_posts_verified_target(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(request.method, "POST")
+            self.assertEqual(request.url.path, "/dialogs/action/set-value")
+            self.assertEqual(
+                json.loads(request.content),
+                {
+                    "index": 2,
+                    "expectedTitle": "PEmicro Connection Assistant",
+                    "widgetPath": "0.2.1",
+                    "value": "0.25 MHz",
+                },
+            )
+            return httpx.Response(200, json={"ok": True, "data": {"changed": True}})
+
+        server.bridge_client = BridgeClient(
+            BridgeSettings(base_url="http://127.0.0.1:39231", token="abc"),
+            transport=_mock_transport(handler),
+        )
+
+        payload = await server.call_dialog_set_value(
+            2, "PEmicro Connection Assistant", "0.2.1", "0.25 MHz"
+        )
+        self.assertTrue(payload["data"]["changed"])
+
 
 
 class ServerRegistrationTests(unittest.TestCase):
@@ -290,6 +340,8 @@ class ServerRegistrationTests(unittest.TestCase):
             "danger_state",
             "danger_enable",
             "danger_disable",
+            "dialog_click_button",
+            "dialog_set_value",
             "debug_step",
             "debug_resume",
             "debug_suspend",

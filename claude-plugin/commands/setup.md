@@ -100,12 +100,20 @@ mv "$BI.new" "$BI"
 echo "com.example.s32ds.agent.bridge,${VER},plugins/com.example.s32ds.agent.bridge_${VER}.jar,4,true" >> "$BI"
 ```
 
-### Step 5 — Start S32DS with `-clean`
+### Step 5 — Start S32DS with `-clean`, an explicit workspace, and the bundled JVM
 
-`-clean` forces OSGi to rescan bundles (required after installing a new plugin):
+`-clean` forces OSGi to rescan bundles (required after installing a new plugin).
+Always pass `-data` so the Workspace Launcher does not pause startup and require
+desktop interaction. Use the S32DS install root as the working directory and its
+bundled JVM so NXP JavaFX Configuration Tools continue to resolve their relative
+module path correctly:
 ```bash
+S32DS_ROOT=$(dirname "$S32DS_ECLIPSE")
+WORKSPACE="${S32DS_WORKSPACE:-${USERPROFILE:-$HOME}/workspaceS32DS.3.5}"
 powershell -NoProfile -Command \
-  "Start-Process -FilePath '$S32DS_ECLIPSE\s32ds.exe' -ArgumentList '-clean' -WorkingDirectory '$S32DS_ECLIPSE'"
+  "Start-Process -FilePath '$S32DS_ECLIPSE\s32ds.exe' \
+    -ArgumentList '-vm','$S32DS_ROOT\jre\bin\javaw.exe','-clean','-data','$WORKSPACE' \
+    -WorkingDirectory '$S32DS_ROOT'"
 ```
 
 ### Step 6 — Wait for the bridge to come up

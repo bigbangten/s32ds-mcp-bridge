@@ -24,6 +24,7 @@ import com.example.s32ds.agent.bridge.index.DebugContextDiagnostics;
 import com.example.s32ds.agent.bridge.index.DebugInspector;
 import com.example.s32ds.agent.bridge.index.DebugSnapshotReader;
 import com.example.s32ds.agent.bridge.index.ExpressionController;
+import com.example.s32ds.agent.bridge.index.DialogController;
 import com.example.s32ds.agent.bridge.index.DialogInspector;
 import com.example.s32ds.agent.bridge.index.LaunchConfigAnalyzer;
 import com.example.s32ds.agent.bridge.index.LaunchRunner;
@@ -62,6 +63,7 @@ public final class Router {
     private final ExpressionController expressionController = new ExpressionController();
     private final LaunchRunner launchRunner = new LaunchRunner();
     private final DialogInspector dialogInspector = new DialogInspector();
+    private final DialogController dialogController = new DialogController();
     private final ConsoleTail consoleTail = new ConsoleTail();
 
     public Router(BridgeServer bridgeServer, String bearerToken) {
@@ -411,6 +413,44 @@ public final class Router {
             if ("POST".equals(method) && "/danger/disable".equals(path)) {
                 DangerGate.disable();
                 send(exchange, 200, ok(DangerGate.snapshot()));
+                return;
+            }
+
+            if ("POST".equals(method) && "/dialogs/action/click-button".equals(path)) {
+                if (!DangerGate.isOn()) { sendDangerOff(exchange); return; }
+                Map<?, ?> body = objectBody(exchange);
+                Object rawIndex = body.get("index");
+                if (!(rawIndex instanceof Number)) {
+                    throw new IllegalArgumentException("Field 'index' must be an integer");
+                }
+                int index = ((Number) rawIndex).intValue();
+                if (((Number) rawIndex).doubleValue() != index) {
+                    throw new IllegalArgumentException("Field 'index' must be an integer");
+                }
+                send(exchange, 200, ok(dialogController.clickButton(
+                        index,
+                        strOrNull(body.get("expectedTitle")),
+                        strOrNull(body.get("widgetPath")),
+                        strOrNull(body.get("expectedText")))));
+                return;
+            }
+            if ("POST".equals(method) && "/dialogs/action/set-value".equals(path)) {
+                if (!DangerGate.isOn()) { sendDangerOff(exchange); return; }
+                Map<?, ?> body = objectBody(exchange);
+                Object rawIndex = body.get("index");
+                if (!(rawIndex instanceof Number)) {
+                    throw new IllegalArgumentException("Field 'index' must be an integer");
+                }
+                int index = ((Number) rawIndex).intValue();
+                if (((Number) rawIndex).doubleValue() != index) {
+                    throw new IllegalArgumentException("Field 'index' must be an integer");
+                }
+                Object rawValue = body.get("value");
+                send(exchange, 200, ok(dialogController.setValue(
+                        index,
+                        strOrNull(body.get("expectedTitle")),
+                        strOrNull(body.get("widgetPath")),
+                        rawValue == null ? null : String.valueOf(rawValue))));
                 return;
             }
 
