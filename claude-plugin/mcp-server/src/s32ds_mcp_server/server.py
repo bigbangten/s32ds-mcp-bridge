@@ -239,6 +239,32 @@ async def fetch_dialog_widgets(index: int, depth: int = 6) -> dict[str, Any]:
     return await bridge_client.get_json(f"/dialogs/{index}/widgets?depth={depth}")
 
 
+async def call_dialog_click_button(index: int, expected_title: str,
+                                   widget_path: str, expected_text: str) -> dict[str, Any]:
+    return await bridge_client.post_json(
+        "/dialogs/action/click-button",
+        {
+            "index": int(index),
+            "expectedTitle": expected_title,
+            "widgetPath": widget_path,
+            "expectedText": expected_text,
+        },
+    )
+
+
+async def call_dialog_set_value(index: int, expected_title: str,
+                                widget_path: str, value: str) -> dict[str, Any]:
+    return await bridge_client.post_json(
+        "/dialogs/action/set-value",
+        {
+            "index": int(index),
+            "expectedTitle": expected_title,
+            "widgetPath": widget_path,
+            "value": value,
+        },
+    )
+
+
 async def fetch_console_list() -> dict[str, Any]:
     return await bridge_client.get_json("/console/list")
 
@@ -699,7 +725,7 @@ def create_server() -> FastMCP:
         """Currently visible SWT shells (main window, dialogs, wizards, popups).
 
         Use when the user mentions a dialog/wizard is in front of them. Pair with
-        dialog_widgets(index) to read its fields ??never to click buttons.
+        dialog_widgets(index) to read its fields and stable widget paths.
         """
         return await fetch_dialogs_open()
 
@@ -707,7 +733,9 @@ def create_server() -> FastMCP:
     async def dialog_widgets(index: int, depth: int = 6) -> dict[str, Any]:
         """Widget tree of dialog at given index (from dialogs_open).
 
-        Returns field values, button labels, combo selections, tab labels. Read-only.
+        Returns field values, button labels, combo selections, tab labels, and a
+        path for each widget. Read-only; paths are valid only while the current
+        dialog tree remains open and unchanged.
         """
         return await fetch_dialog_widgets(index, depth)
 
@@ -750,6 +778,33 @@ def create_server() -> FastMCP:
     async def danger_disable() -> dict[str, Any]:
         """Close the danger gate immediately."""
         return await call_danger_disable()
+
+    @mcp.tool()
+    async def dialog_click_button(index: int, expected_title: str,
+                                  widget_path: str, expected_text: str) -> dict[str, Any]:
+        """Click one verified button in an already open SWT dialog.
+
+        First call dialogs_open and dialog_widgets. Pass the exact current shell
+        title, widget path, and button label returned by those tools. The bridge
+        fails closed if any value is stale or mismatched. Requires danger mode.
+        Use this instead of desktop UI control for Retry, Abort, OK, Save and
+        Launch, and similar S32DS dialog buttons.
+        """
+        return await call_dialog_click_button(
+            index, expected_title, widget_path, expected_text
+        )
+
+    @mcp.tool()
+    async def dialog_set_value(index: int, expected_title: str,
+                               widget_path: str, value: str) -> dict[str, Any]:
+        """Set one verified value in an already open SWT dialog.
+
+        Supports editable Text, existing Combo/List choices, check/radio/toggle
+        buttons, and tabs. First obtain the exact title and path with dialogs_open
+        and dialog_widgets. Unsupported or stale targets fail closed. Requires
+        danger mode. Use this for settings such as the PEmicro interface speed.
+        """
+        return await call_dialog_set_value(index, expected_title, widget_path, value)
 
     @mcp.tool()
     async def debug_step(kind: str = "over") -> dict[str, Any]:

@@ -23,11 +23,12 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Read-only inspection of currently open SWT Shells (dialogs, wizards, popups).
+ * Inspection of currently open SWT Shells (dialogs, wizards, popups).
  *
  * Uses SWT Display.getShells() to enumerate and walk widget trees. Extracts
- * field values, button labels, etc. DOES NOT click anything — that would fall
- * into Phase 5's SWT input simulation which this install rejects.
+ * field values, button labels, etc. Each widget receives a stable path for the
+ * lifetime of the current widget tree. Mutating actions live in
+ * {@link DialogController} and are protected by the danger gate in the router.
  */
 public final class DialogInspector {
 
@@ -78,20 +79,21 @@ public final class DialogInspector {
             Shell s = shells[index];
             out.put("index", index);
             out.put("text", s.getText());
-            out.put("tree", describeWidget(s, 0, depth));
+            out.put("tree", describeWidget(s, "root", 0, depth));
             return out;
         });
     }
 
     // ───────────────────── helpers ─────────────────────
 
-    private Map<String, Object> describeWidget(Widget w, int curDepth, int maxDepth) {
+    private Map<String, Object> describeWidget(Widget w, String path, int curDepth, int maxDepth) {
         if (w == null || w.isDisposed()) {
             Map<String, Object> dead = new LinkedHashMap<>();
             dead.put("class", "disposed");
             return dead;
         }
         Map<String, Object> row = new LinkedHashMap<>();
+        row.put("path", path);
         row.put("class", w.getClass().getSimpleName());
 
         // Read-only text/value harvest per widget class
@@ -148,8 +150,10 @@ public final class DialogInspector {
 
         if (curDepth < maxDepth && w instanceof Composite) {
             java.util.List<Map<String, Object>> children = new ArrayList<>();
-            for (Control c : ((Composite) w).getChildren()) {
-                children.add(describeWidget(c, curDepth + 1, maxDepth));
+            Control[] controls = ((Composite) w).getChildren();
+            for (int i = 0; i < controls.length; i++) {
+                String childPath = "root".equals(path) ? String.valueOf(i) : path + "." + i;
+                children.add(describeWidget(controls[i], childPath, curDepth + 1, maxDepth));
             }
             if (!children.isEmpty()) row.put("children", children);
         }

@@ -86,6 +86,7 @@ eclipse-bridge/releng/com.example.s32ds.agent.repository/target/
 Core workbench:
 - Health, active perspective/editor/selection, open editors, Problems view, views, perspectives, commands, menus, legacy actions, dialogs, wizards, and console output.
 - Open or hide views, switch perspectives, open files, save all, and build projects.
+- Inspect SWT dialogs with per-widget paths, set verified fields/selections, and click verified buttons without taking desktop control.
 - Health remains responsive when the SWT event loop is wedged and reports separate UI and DSF responsiveness probes.
 
 S32DS environment:
@@ -107,7 +108,7 @@ Self-improving skill:
 
 - HTTP binds to `127.0.0.1` only.
 - Every endpoint requires a bearer token generated inside the S32DS workspace.
-- Mutating debug and launch operations require explicit danger enablement and expire automatically.
+- Mutating debug, launch, and dialog operations require explicit danger enablement and expire automatically.
 - The bridge uses Eclipse/CDT/DSF APIs, not screen scraping or arbitrary OS keyboard input.
 
 ## Repository Layout

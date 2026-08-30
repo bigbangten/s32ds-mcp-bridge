@@ -32,6 +32,7 @@ Read-only inspection tools are always available with a valid token.
 Operations that can change the target, debugger state, launch state, memory, registers, breakpoints, or watch expressions require the time-limited danger gate. Examples:
 
 - launch run / run with overrides
+- verified SWT dialog value changes and button actions
 - resume, step, suspend, terminate, restart
 - breakpoint set/clear
 - memory/register writes
@@ -40,6 +41,8 @@ Operations that can change the target, debugger state, launch state, memory, reg
 - run-to-line and jump-to-line
 
 The MCP skill and command docs instruct agents to enable danger mode only after an explicit user request in the current turn.
+
+Dialog actions are restricted to an already open SWT shell. Each request must match the shell's exact current title and a widget path returned by a fresh inspection; button actions also match the current label. The bridge rejects stale paths, title/label mismatches, disabled or hidden controls, arbitrary combo/list values, and unsupported widget classes. It does not expose coordinates, keyboard injection, or general desktop control.
 
 When multiple live debug launches exist, selected run-control operations require an unambiguous launch/session selector. Background suspend/resume keeps UI-command fallback disabled by default so an NXP SVD view cannot be activated as a side effect.
 

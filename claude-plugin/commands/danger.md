@@ -64,7 +64,7 @@ curl -fs -H "$AUTH" "$BASE/danger/state" | jq '.data | {
 
 ## Reporting
 
-- After `on`: list which operations the user has just enabled (step/resume/suspend/terminate/restart, breakpoint set/clear, memory write, register write, launch run). Mention the auto-expiry time so they know it'll close itself.
+- After `on`: list which operations the user has just enabled (dialog value/button actions, step/resume/suspend/terminate/restart, breakpoint set/clear, memory write, register write, launch run). Mention the auto-expiry time so they know it'll close itself.
 - After `off`: confirm closure.
 - For `status` while OFF: show that "no mutating ops are allowed; run `/s32:danger on` to permit them".
 

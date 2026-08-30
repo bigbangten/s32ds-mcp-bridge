@@ -24,7 +24,7 @@
   "interface": {
     "displayName": "S32DS MCP Bridge",
     "shortDescription": "Live S32DS workbench introspection and guarded debug control.",
-    "longDescription": "Adds S32 Design Studio live state, command, menu, build, Problems, launch-config, dialog, console, and guarded debug/launch MCP tools for Codex.",
+    "longDescription": "Adds S32 Design Studio live state, command, menu, build, Problems, launch-config, guarded dialog control, console, and guarded debug/launch MCP tools for Codex.",
     "developerName": "Open-source contributors",
     "category": "Developer Tools",
     "capabilities": [

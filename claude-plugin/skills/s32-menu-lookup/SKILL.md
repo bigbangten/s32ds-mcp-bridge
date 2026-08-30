@@ -39,7 +39,7 @@ Never record bearer tokens, secrets, private user source code, speculative guess
 | "뭐 설치돼 있어?" / "어떤 toolchain?" | `s32ds_inventory`, `s32ds_toolchains`, `s32ds_debuggers`, `s32ds_config_tools` | |
 | "디버그 중인데 이상해" | `debug_sessions` → `debug_breakpoints` → `debug_stackframes` → `debug_variables(frame)` | |
 | "step/resume/terminate/breakpoint/memory/register/launch 실행해" | `danger_state` | explicit user ask 확인 → 필요 시 `/s32:danger on` 안내 → mutating tool 호출 |
-| "What dialog is open?" / "Close the current notification/modal" | `dialogs_open` | `dialog_widgets(index)`; if the user explicitly asks to close a modal, use an exact-title close recipe from `references/lessons.md` and verify with `dialogs_open` |
+| "What dialog is open?" / "Close the current notification/modal" | `dialogs_open` | `dialog_widgets(index)` → for an explicit action use `dialog_set_value` / `dialog_click_button` with exact title, path, and label → verify with `dialogs_open` |
 | "PEMicro 연결 로그" / "Console 내용" | `console_list` | `console_tail(name="PEMicro")` |
 | "파일 열어줘" | `open_file(path)` | |
 
@@ -88,11 +88,13 @@ Nature determines which CDT menus apply.
 
 ### For dialog/wizard guidance:
 
-1. `dialogs_open` — is a dialog visible?
-2. If yes, `dialog_widgets(index)` — read field values, button labels
-3. If the user asks for guidance, tell them: "In the current dialog, [field X] should be [value Y] because [reasoning]. Press [Button Z]."
-4. If the user explicitly asks you to close/dismiss a modal and the bridge has no click endpoint, use a narrow external UI method only against the exact visible dialog title/process, then verify with `dialogs_open`.
-5. Never claim a click/close happened until a follow-up bridge query confirms it.
+1. `dialogs_open` — identify the exact visible shell title and index.
+2. `dialog_widgets(index)` — read field values, button labels, and widget `path` values. Paths are valid only for the current open tree; re-read after any action that changes the dialog.
+3. If the user asks only for guidance, tell them: "In the current dialog, [field X] should be [value Y] because [reasoning]. Press [Button Z]."
+4. If the user explicitly asks you to act, confirm danger mode is ON. Use `dialog_set_value(index, expected_title, widget_path, value)` for Text, Combo/List choices, check/radio/toggle buttons, or tabs. Use only values visible in the latest widget tree.
+5. Use `dialog_click_button(index, expected_title, widget_path, expected_text)` for Retry, Abort, OK, Save and Launch, and similar buttons. Copy the exact current title, path, and label from the latest inspection; the bridge intentionally rejects stale or mismatched targets.
+6. Verify the result with `dialogs_open`, `dialog_widgets`, and/or `console_tail`. Never claim an action succeeded until a follow-up bridge query confirms its effect.
+7. Do not use computer-use, screenshots, keyboard shortcuts, or foreground automation for a standard SWT dialog while these MCP actions can address it. External UI is a last resort only for an unsupported non-SWT/native control, and must be narrowly scoped to the exact visible dialog/process.
 
 ## Anti-patterns (real failures that cost trust)
 
@@ -109,6 +111,8 @@ Nature determines which CDT menus apply.
 6. **Controlling the first debug session in a two-board setup.** Session enumeration order is not board identity. Use `launchId` or `sessionId`, and stop if selection is ambiguous.
 
 7. **Bringing S32DS to the foreground to close SVD views or press Suspend.** Use `hide_view` and background DSF run control. Foreground automation interrupts the user and can re-trigger the problematic view.
+
+8. **Using computer-use to operate ordinary SWT modal controls.** Inspect the current tree and use `dialog_set_value` / `dialog_click_button` with exact-title and exact-widget verification. Re-inspect after each transition because paths are intentionally short-lived.
 
 ## Common S32DS IDs (reference — always verify via tools first)
 
